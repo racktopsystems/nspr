@@ -70,8 +70,13 @@
 #define _PR_POLL_AVAILABLE
 #define _PR_USE_POLL
 #define _PR_STAT_HAS_ST_ATIM
+#ifdef SOLARIS2_5
+#define _PR_HAVE_SYSV_SEMAPHORES
+#define PR_HAVE_SYSV_NAMED_SHARED_MEMORY
+#else
 #define _PR_HAVE_POSIX_SEMAPHORES
 #define PR_HAVE_POSIX_NAMED_SHARED_MEMORY
+#endif
 #define _PR_HAVE_GETIPNODEBYNAME
 #define _PR_HAVE_GETIPNODEBYADDR
 #define _PR_INET6_PROBE
@@ -81,6 +86,24 @@
 #define AI_V4MAPPED 0x0001 
 #define AI_ALL      0x0002
 #define AI_ADDRCONFIG   0x0004
+#define _PR_HAVE_MD_SOCKADDR_IN6
+/* isomorphic to struct in6_addr on Solaris 8 */
+struct _md_in6_addr {
+    union {
+        PRUint8  _S6_u8[16];
+        PRUint32 _S6_u32[4];
+        PRUint32 __S6_align;
+    } _S6_un;
+};
+/* isomorphic to struct sockaddr_in6 on Solaris 8 */
+struct _md_sockaddr_in6 {
+    PRUint16 sin6_family;
+    PRUint16 sin6_port;
+    PRUint32 sin6_flowinfo;
+    struct _md_in6_addr sin6_addr;
+    PRUint32 sin6_scope_id;
+    PRUint32 __sin6_src_id;
+};
 #endif
 
 #include "prinrval.h"

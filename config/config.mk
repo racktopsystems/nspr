@@ -54,8 +54,17 @@ NOMD_CFLAGS	= $(CC_ONLY_FLAGS) $(OPTIMIZER) $(NOMD_OS_CFLAGS)\
 NOMD_CCFLAGS	= $(CCC_ONLY_FLAGS) $(OPTIMIZER) $(NOMD_OS_CFLAGS)\
 		  $(XP_DEFINE) $(DEFINES) $(INCLUDES) $(XCFLAGS)
 
-NSINSTALL	= $(MOD_DEPTH)/config/$(OBJDIR_NAME)/nsinstall
+LDFLAGS		= $(OS_LDFLAGS)
 
+define MAKE_OBJDIR
+if test ! -d $(@D); then rm -rf $(@D); $(NSINSTALL) -D $(@D); fi
+endef
+
+LINK_DLL	= $(LD) $(OS_DLLFLAGS) $(DLLFLAGS)
+
+ifneq (,$(filter WINNT OS2, $(OS_ARCH)))
+INSTALL		= $(NSINSTALL)
+else
 ifeq ($(NSDISTMODE),copy)
 # copy files, but preserve source mtime
 INSTALL		= $(NSINSTALL) -t
@@ -68,12 +77,17 @@ else
 INSTALL		= $(NSINSTALL) -R
 endif
 endif
+endif # WINNT || OS2
 
 ifdef BUILD_DEBUG_GC
 DEFINES		+= -DDEBUG_GC
 endif
 
 GARBAGE		+= $(DEPENDENCIES) core $(wildcard core.[0-9]*)
+
+ifdef USE_AUTOCONF
+DIST_GARBAGE += Makefile
+endif
 
 DEFINES += -DFORCE_PR_LOG
 
@@ -151,6 +165,13 @@ MOZ_INCL	= $(NSDEPTH)/dist/public/win16
 MOZ_DIST	= $(NSDEPTH)/dist/WIN16D_D.OBJ
 endif
 
+# if not using autoconf, set these values accordingly
+prefix		= $(DIST)
+exec_prefix	= $(prefix)
+bindir		= $(prefix)/bin
+includedir	= $(prefix)/include
+libdir		= $(prefix)/lib
+
 VPATH		= $(OBJDIR)
 DEPENDENCIES	= $(OBJDIR)/.md
 
@@ -182,6 +203,10 @@ endif
 
 ifeq ($(USE_IPV6),1)
 OS_CFLAGS += -D_PR_INET6
+endif
+
+ifdef GC_LEAK_DETECTOR
+OS_CFLAGS += -DGC_LEAK_DETECTOR
 endif
 
 ####################################################################

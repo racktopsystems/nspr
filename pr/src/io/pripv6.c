@@ -149,6 +149,7 @@ static PRFileDesc* PR_CALLBACK Ipv6ToIpv4SocketAccept (
     PRFileDesc *newfd;
     PRFileDesc *newstack;
 	PRNetAddr tmp_ipv4addr;
+    PRNetAddr *addrlower = NULL;
 
     PR_ASSERT(fd != NULL);
     PR_ASSERT(fd->lower != NULL);
@@ -161,13 +162,16 @@ static PRFileDesc* PR_CALLBACK Ipv6ToIpv4SocketAccept (
     }
     *newstack = *fd;  /* make a copy of the accepting layer */
 
-    newfd = (fd->lower->methods->accept)(fd->lower, &tmp_ipv4addr, timeout);
+    if (addr)
+        addrlower = &tmp_ipv4addr;
+    newfd = (fd->lower->methods->accept)(fd->lower, addrlower, timeout);
     if (NULL == newfd)
     {
         PR_DELETE(newstack);
         return NULL;
     }
-	_PR_ConvertToIpv6NetAddr(&tmp_ipv4addr, addr);
+    if (addr)
+        _PR_ConvertToIpv6NetAddr(&tmp_ipv4addr, addr);
 
     rv = PR_PushIOLayer(newfd, PR_TOP_IO_LAYER, newstack);
     PR_ASSERT(PR_SUCCESS == rv);
@@ -272,11 +276,29 @@ PRStatus _pr_init_ipv6()
 
 #if !defined(_PR_INET6) && defined(_PR_HAVE_GETIPNODEBYNAME)
 	PRLibrary *lib;	
-	_pr_getipnodebyname_fp = PR_FindSymbolAndLibrary("getipnodebyname", &lib);
+#if defined(VMS)
+#define GETIPNODEBYNAME "DECC$GETIPNODEBYNAME"
+#define GETIPNODEBYADDR "DECC$GETIPNODEBYADDR"
+#define FREEHOSTENT     "DECC$FREEHOSTENT"
+#define GAISTRERROR     "DECC$GAISTRERROR"
+	typedef char * (*_pr_getstrerror_t)(int);
+	_pr_getstrerror_t _pr_gaistrerror_fp;
+	_pr_getipnodebyname_fp = NULL;
+	_pr_gaistrerror_fp = (_pr_getstrerror_t)PR_FindSymbolAndLibrary(GAISTRERROR, &lib);
+	if (NULL != _pr_gaistrerror_fp) {
+		if (NULL != (*_pr_gaistrerror_fp)(0))
+			_pr_getipnodebyname_fp = PR_FindSymbol(lib, GETIPNODEBYNAME);
+	}
+#else
+#define GETIPNODEBYNAME "getipnodebyname"
+#define GETIPNODEBYADDR "getipnodebyaddr"
+#define FREEHOSTENT     "freehostent"
+	_pr_getipnodebyname_fp = PR_FindSymbolAndLibrary(GETIPNODEBYNAME, &lib);
+#endif
 	if (NULL != _pr_getipnodebyname_fp) {
-		_pr_freehostent_fp = PR_FindSymbol(lib, "freehostent");
+		_pr_freehostent_fp = PR_FindSymbol(lib, FREEHOSTENT);
 		if (NULL != _pr_freehostent_fp) {
-			_pr_getipnodebyaddr_fp = PR_FindSymbol(lib, "getipnodebyaddr");
+			_pr_getipnodebyaddr_fp = PR_FindSymbol(lib, GETIPNODEBYADDR);
 			if (NULL != _pr_getipnodebyaddr_fp)
 				_pr_ipv6_is_present = PR_TRUE;
 			else

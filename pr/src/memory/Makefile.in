@@ -37,9 +37,13 @@ endif #!USE_AUTOCONF
 
 CSRCS = prseg.c prshm.c prshma.c
 
+ifdef GC_LEAK_DETECTOR
+CSRCS += prgcleak.c
+endif
+
 TARGETS	= $(OBJS)
 
-INCLUDES = -I$(DIST)/include -I$(topsrcdir)/pr/include -I$(topsrcdir)/pr/include/private
+INCLUDES = -I$(includedir) -I$(topsrcdir)/pr/include -I$(topsrcdir)/pr/include/private
 
 DEFINES += -D_NSPR_BUILD_
 
@@ -47,5 +51,4 @@ include $(topsrcdir)/config/rules.mk
 
 export:: $(TARGETS)
 
-install:: export
 

@@ -39,10 +39,15 @@ ifdef PR_CLIENT_BUILD
 export::
 	rm -r -f $(DIST)/../public/nspr
 ifdef PR_CLIENT_BUILD_UNIX
-	rm -f $(DIST)/lib/libnspr.a
-	rm -f $(DIST)/bin/libnspr.$(DLL_SUFFIX)
+	rm -f $(libdir)/libnspr.a
+	rm -f $(bindir)/libnspr.$(DLL_SUFFIX)
 endif
 endif
+
+distclean::
+	@echo "cd pr/tests; $(MAKE) $@"
+	@$(MAKE) -C pr/tests $@
+	rm -f config/my_config.mk config/my_overrides.mk
 
 release::
 	echo $(BUILD_NUMBER) > $(RELEASE_DIR)/$(BUILD_NUMBER)/version.df

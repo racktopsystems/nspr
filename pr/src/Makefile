@@ -141,8 +141,12 @@ endif
 
 ifeq ($(OS_ARCH),WINNT)
 ifneq ($(OS_TARGET),WIN16)
-OS_LIBS		= advapi32.lib wsock32.lib winmm.lib
+OS_LIBS		= advapi32.lib wsock32.lib
 endif
+endif
+
+ifdef GC_LEAK_DETECTOR
+OS_LIBS		+= -L$(libdir) -lboehm
 endif
 
 #
@@ -240,6 +244,10 @@ OBJS += \
 	cplus/$(OBJDIR)/rcnetio.$(OBJ_SUFFIX) \
 	cplus/$(OBJDIR)/rcthread.$(OBJ_SUFFIX) \
 	cplus/$(OBJDIR)/rctime.$(OBJ_SUFFIX)
+endif
+
+ifdef GC_LEAK_DETECTOR
+OBJS += memory/$(OBJDIR)/prgcleak.$(OBJ_SUFFIX)
 endif
 
 ifeq ($(OS_ARCH), WINNT)
@@ -353,7 +361,7 @@ endif
 # Version information generation (begin)
 #
 ECHO = echo
-INCLUDES = -I$(DIST)/include
+INCLUDES = -I$(includedir) -I$(MOD_DEPTH)/pr/include -I$(MOD_DEPTH)/pr/include/private
 TINC = $(OBJDIR)/_pr_bld.h
 
 ifeq ($(OS_TARGET),OS2)
@@ -373,6 +381,8 @@ else
 endif
 
 DEFINES     += -D_NSPR_BUILD_
+
+GARBAGE     += $(TINC)
 
 $(TINC):
 	@$(MAKE_OBJDIR)
@@ -401,21 +411,21 @@ endif
 
 
 #
-# The Client build wants the shared libraries in $(DIST)/bin,
+# The Client build wants the shared libraries in $(bindir),
 # so we also install them there.
 #
 
 export:: $(TARGETS)
-	$(INSTALL) -m 444 $(TARGETS) $(DIST)/lib
+	$(INSTALL) -m 444 $(TARGETS) $(libdir)
 ifdef SHARED_LIBRARY
 ifeq ($(OS_ARCH),HP-UX)
-	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(DIST)/lib
-	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(DIST)/bin
+	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(libdir)
+	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(bindir)
 else
-	$(INSTALL) -m 444 $(SHARED_LIBRARY) $(DIST)/bin
+	$(INSTALL) -m 444 $(SHARED_LIBRARY) $(bindir)
 endif
 ifeq ($(OS_ARCH), OpenVMS)
-	$(INSTALL) -m 444 $(SHARED_LIBRARY:.$(DLL_SUFFIX)=.vms) $(DIST)/lib
+	$(INSTALL) -m 444 $(SHARED_LIBRARY:.$(DLL_SUFFIX)=.vms) $(libdir)
 endif
 endif
 ifeq ($(MOZ_BITS),16)
@@ -428,4 +438,3 @@ $(AIX_RTL_LIBC): /usr/ccs/lib/libc.a
 	rtl_enable -o $@ $<
 endif
 
-install:: export
