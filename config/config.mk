@@ -75,6 +75,10 @@ endif
 
 GARBAGE		+= $(DEPENDENCIES) core $(wildcard core.[0-9]*)
 
+ifdef USE_AUTOCONF
+DIST_GARBAGE += Makefile
+endif
+
 DEFINES += -DFORCE_PR_LOG
 
 ifeq ($(_PR_NO_CLOCK_TIMER),1)
@@ -182,6 +186,10 @@ endif
 
 ifeq ($(USE_IPV6),1)
 OS_CFLAGS += -D_PR_INET6
+endif
+
+ifdef GC_LEAK_DETECTOR
+OS_CFLAGS += -DGC_LEAK_DETECTOR
 endif
 
 ####################################################################

@@ -141,8 +141,12 @@ endif
 
 ifeq ($(OS_ARCH),WINNT)
 ifneq ($(OS_TARGET),WIN16)
-OS_LIBS		= advapi32.lib wsock32.lib winmm.lib
+OS_LIBS		= advapi32.lib wsock32.lib
 endif
+endif
+
+ifdef GC_LEAK_DETECTOR
+OS_LIBS		+= -L$(DIST)/lib -lboehm
 endif
 
 #
@@ -240,6 +244,10 @@ OBJS += \
 	cplus/$(OBJDIR)/rcnetio.$(OBJ_SUFFIX) \
 	cplus/$(OBJDIR)/rcthread.$(OBJ_SUFFIX) \
 	cplus/$(OBJDIR)/rctime.$(OBJ_SUFFIX)
+endif
+
+ifdef GC_LEAK_DETECTOR
+OBJS += memory/$(OBJDIR)/prgcleak.$(OBJ_SUFFIX)
 endif
 
 ifeq ($(OS_ARCH), WINNT)
@@ -373,6 +381,8 @@ else
 endif
 
 DEFINES     += -D_NSPR_BUILD_
+
+GARBAGE     += $(TINC)
 
 $(TINC):
 	@$(MAKE_OBJDIR)

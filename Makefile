@@ -44,6 +44,11 @@ ifdef PR_CLIENT_BUILD_UNIX
 endif
 endif
 
+distclean::
+	@echo "cd pr/tests; $(MAKE) $@"
+	@$(MAKE) -C pr/tests $@
+	rm -f config/my_config.mk config/my_overrides.mk
+
 release::
 	echo $(BUILD_NUMBER) > $(RELEASE_DIR)/$(BUILD_NUMBER)/version.df
 	@if test -f imports.df; then \

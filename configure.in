@@ -31,7 +31,6 @@ fi
 
 AC_CONFIG_AUX_DIR(${srcdir}/build/autoconf)
 AC_CANONICAL_SYSTEM
-AC_VALIDATE_CACHED_SYSTEM_TUPLE
 AC_PREFIX_DEFAULT(\${MOD_DEPTH}/dist)
 
 dnl Set this define to make fixes w/o breaking anything else.
@@ -247,6 +246,7 @@ PR_MD_ASFILES=
 PR_MD_CSRCS=
 PR_MD_ARCH_DIR=unix
 AR_FLAGS='cr $@'
+AS='$(CC)'
 
 OS_TARGET=`uname -s`
 OS_ARCH=`uname -s | sed -e 's|/|_|g'`
@@ -578,6 +578,10 @@ case "$target" in
         CXXFLAGS="$CXXFLAGS -mieee"
         _OPTIMIZE_FLAGS=-O2
         ;;
+    i?86)
+        PR_MD_ASFILES=os_Linux_x86.s
+        _OPTIMIZE_FLAGS=-O2
+        ;;
     m68k)
         _OPTIMIZE_FLAGS=-O
         CFLAGS="$CFLAGS -m68020-40"
@@ -638,11 +642,11 @@ case "$target" in
     AC_DEFINE(XP_UNIX)
     MDCPUCFG_H=_nto.cfg
     PR_MD_CSRCS=nto.c
-    MKSHLIB='qcc -Vgcc_ntox86 -shared -Wl,-h$(@:$(OBJDIR)/%.so=%.so) -o $(@:$(OBJDIR)/%.so=%.so)'
+    MKSHLIB='qcc -Vgcc_ntox86 -shared -Wl,-h$(@:$(OBJDIR)/%.so=%.so) -M -o $(@:$(OBJDIR)/%.so=%.so)'
     CFLAGS="$CFLAGS -Wc,-Wall -Wc,-Wno-parentheses -DNTO -D_QNX_SOURCE -DHAVE_POINTER_LOCALTIME_R -shared"
     OS_LIBS="-lsocket"
-    _OPTIMIZE_FLAGS="-O2"
-    _DEBUG_FLAGS="-O2 -gdwarf-2"
+    _OPTIMIZE_FLAGS="-O1"
+    _DEBUG_FLAGS="-O1 -gstabs"
     COMPILER_TAG="_qcc"
     CC="qcc -Vgcc_ntox86 -w"
     CXX="QCC -Vgcc_ntox86 -w"
@@ -1077,7 +1081,7 @@ AC_SUBST(ULTRASPARC_FILTER_LIBRARY)
 dnl ========================================================
 dnl Generate output files.
 dnl ========================================================
-AC_OUTPUT([
+MAKEFILES="
 Makefile 
 config/Makefile
 config/autoconf.mk
@@ -1088,39 +1092,38 @@ lib/ds/Makefile
 lib/libc/Makefile 
 lib/libc/include/Makefile 
 lib/libc/src/Makefile 
-lib/msgc/Makefile 
-lib/msgc/include/Makefile 
-lib/msgc/src/Makefile 
-lib/msgc/tests/Makefile
-lib/prstreams/Makefile 
-lib/tests/Makefile 
 pr/Makefile 
 pr/include/Makefile 
 pr/include/md/Makefile 
 pr/include/obsolete/Makefile 
 pr/include/private/Makefile 
 pr/src/Makefile 
-pr/src/bthreads/Makefile 
-pr/src/cplus/Makefile 
-pr/src/cplus/tests/Makefile 
 pr/src/io/Makefile 
 pr/src/linking/Makefile 
 pr/src/malloc/Makefile 
 pr/src/md/Makefile 
-pr/src/md/beos/Makefile 
-pr/src/md/os2/Makefile 
-pr/src/md/unix/Makefile 
-pr/src/md/windows/Makefile 
+pr/src/md/${PR_MD_ARCH_DIR}/Makefile 
 pr/src/memory/Makefile 
 pr/src/misc/Makefile 
-pr/src/pthreads/Makefile 
 pr/src/threads/Makefile 
-pr/src/threads/combined/Makefile 
 pr/tests/Makefile 
 pr/tests/dll/Makefile 
-pr/tests/w16gui/Makefile 
-tools/Makefile 
-])
+"
 
-dnl lib/prstreams/tests/testprstrm/Makefile 
-dnl lib/tests/windows/makefile 
+dnl lib/tests/Makefile
+dnl pr/tests/w16gui/Makefile
+dnl tools/Makefile
+
+if test -z "$USE_PTHREADS" && test -z "$USE_BTHREADS"; then
+    MAKEFILES="$MAKEFILES pr/src/threads/combined/Makefile"
+elif test -n "$USE_PTHREADS"; then
+    MAKEFILES="$MAKEFILES pr/src/pthreads/Makefile"
+elif test -n "$USE_BTHREADS"; then
+    MAKEFILES="$MAKEFILES pr/src/bthreads/Makefile"
+fi
+
+if test -n "$USE_CPLUS"; then
+    MAKEFILES="$MAKEFILES pr/src/cplus/Makefile pr/src/cplus/tests/Makefile"
+fi
+
+AC_OUTPUT([$MAKEFILES])
