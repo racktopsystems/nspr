@@ -14,10 +14,11 @@
  * 
  * The Initial Developer of the Original Code is Netscape
  * Communications Corporation.  Portions created by Netscape are 
- * Copyright (C) 2000 Netscape Communications Corporation.  All
+ * Copyright (C) 2001 Netscape Communications Corporation.  All
  * Rights Reserved.
  * 
  * Contributor(s):
+ *   Roland Mainz <roland mainz@informatik.med.uni-giessen.de>
  * 
  * Alternatively, the contents of this file may be used under the
  * terms of the GNU General Public License Version 2 or later (the
@@ -32,11 +33,54 @@
  * GPL.
  */
 
-/*
- * A dummy header file that is a dependency for all the object files.
- * Used to force a full recompilation of NSPR in Mozilla's Tinderbox
- * depend builds.  See comments in rules.mk.
- */
+#include "plstr.h"
 
-#error "Do not include this header file."
+PR_IMPLEMENT(char *)
+PL_strtok_r(char *s1, const char *s2, char **lasts)
+{
+    const char *sepp;
+    int         c, sc;
+    char       *tok;
 
+    if( s1 == NULL )
+    {
+        if( *lasts == NULL )
+            return NULL;
+
+        s1 = *lasts;
+    }
+  
+    for( ; (c = *s1) != 0; s1++ )
+    {
+        for( sepp = s2 ; (sc = *sepp) != 0 ; sepp++ )
+        {
+            if( c == sc )
+                break;
+        }
+        if( sc == 0 )
+            break; 
+    }
+
+    if( c == 0 )
+    {
+        *lasts = NULL;
+        return NULL;
+    }
+  
+    tok = s1++;
+
+    for( ; (c = *s1) != 0; s1++ )
+    {
+        for( sepp = s2; (sc = *sepp) != 0; sepp++ )
+        {
+            if( c == sc )
+            {
+                *s1++ = '\0';
+                *lasts = s1;
+                return tok;
+            }
+        }
+    }
+    *lasts = NULL;
+    return tok;
+}

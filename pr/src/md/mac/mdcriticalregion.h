@@ -14,10 +14,12 @@
  * 
  * The Initial Developer of the Original Code is Netscape
  * Communications Corporation.  Portions created by Netscape are 
- * Copyright (C) 2000 Netscape Communications Corporation.  All
+ * Copyright (C) 1998-2000 Netscape Communications Corporation.  All
  * Rights Reserved.
  * 
  * Contributor(s):
+ *                George Warner, Apple Computer Inc.
+ *                Simon Fraser  <sfraser@netscape.com>
  * 
  * Alternatively, the contents of this file may be used under the
  * terms of the GNU General Public License Version 2 or later (the
@@ -32,11 +34,23 @@
  * GPL.
  */
 
-/*
- * A dummy header file that is a dependency for all the object files.
- * Used to force a full recompilation of NSPR in Mozilla's Tinderbox
- * depend builds.  See comments in rules.mk.
- */
+#ifndef mdcriticalregion_h___
+#define mdcriticalregion_h___
 
-#error "Do not include this header file."
+
+#ifndef __MULTIPROCESSING__
+#include <Multiprocessing.h>
+#endif
+
+typedef struct OpaqueMDCriticalRegionID*  MDCriticalRegionID;
+
+OSStatus MD_CriticalRegionCreate(MDCriticalRegionID * pMDCriticalRegionID);
+
+OSStatus MD_CriticalRegionDelete(MDCriticalRegionID pMDCriticalRegionID);
+
+OSStatus MD_CriticalRegionEnter(MDCriticalRegionID pMDCriticalRegionID, Duration pTimeout);
+
+OSStatus MD_CriticalRegionExit(MDCriticalRegionID pMDCriticalRegionID);
+
+#endif /* mdcriticalregion_h___ */
 
