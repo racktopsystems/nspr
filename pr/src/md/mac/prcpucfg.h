@@ -26,6 +26,8 @@
 #undef  IS_LITTLE_ENDIAN
 #define IS_BIG_ENDIAN 1
 
+#define	HAVE_LONG_LONG
+
 #define PR_AF_INET6 30  /* same as AF_INET6 */
 
 #define PR_BYTES_PER_BYTE   1L
@@ -112,6 +114,6 @@
 #define BYTES_PER_WORD_LOG2		PR_BYTES_PER_WORD_LOG2
 #define BYTES_PER_DWORD_LOG2	PR_BYTES_PER_DWORD_LOG2
 #define WORDS_PER_DWORD_LOG2	PR_WORDS_PER_DWORD_LOG2
-#endif NO_NSPR_10_SUPPORT
+#endif /* NO_NSPR_10_SUPPORT */
 
 #endif /* nspr_cpucfg___ */

@@ -45,14 +45,15 @@ endif
 #
 # On OS/2 we proudly support gbash...
 #
-SHELL = GBASH.EXE
+SHELL := GBASH.EXE
 
 CC			= icc -q -DXP_OS2 -N10
 CCC			= icc -q -DXP_OS2 -DOS2=4 -N10
-LINK			= ilink
-AR			= ilib /noignorecase /nologo /Out:$(subst /,\\,$@)
+LINK			= -ilink
+AR			= -ilib /noignorecase /nologo /Out:$(subst /,\\,$@)
 RANLIB 			= @echo RANLIB
 BSDECHO 		= @echo BSDECHO
+STRIP			= @echo STRIP
 NSINSTALL 		= nsinstall
 INSTALL			= $(NSINSTALL)
 MAKE_OBJDIR 		= if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
@@ -67,8 +68,8 @@ LIB_SUFFIX 		= lib
 DLL_SUFFIX 		= dll
 OBJ_SUFFIX		= obj
 
-OS_CFLAGS     		= -W3 -Wcnd- -gm -gd+ -sd- -su4 -ge-
-OS_EXE_CFLAGS 		= -W3 -Wcnd- -gm -gd+ -sd- -su4 
+OS_CFLAGS     		= -W3 -Wcnd- -gm -gd+ -sd- -su4 -ge- -Mp
+OS_EXE_CFLAGS 		= -W3 -Wcnd- -gm -gd+ -sd- -su4 -Mp
 AR_EXTRA_ARGS 		= 
 
 ifdef BUILD_OPT

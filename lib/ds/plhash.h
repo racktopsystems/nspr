@@ -104,6 +104,9 @@ PL_HashTableRemove(PLHashTable *ht, const void *key);
 PR_EXTERN(void *)
 PL_HashTableLookup(PLHashTable *ht, const void *key);
 
+PR_EXTERN(void *)
+PL_HashTableLookupConst(PLHashTable *ht, const void *key);
+
 PR_EXTERN(PRIntn)
 PL_HashTableEnumerateEntries(PLHashTable *ht, PLHashEnumerator f, void *arg);
 
@@ -122,6 +125,10 @@ PL_CompareValues(const void *v1, const void *v2);
 /* Low level access methods */
 PR_EXTERN(PLHashEntry **)
 PL_HashTableRawLookup(PLHashTable *ht, PLHashNumber keyHash, const void *key);
+
+PR_EXTERN(PLHashEntry **)
+PL_HashTableRawLookupConst(PLHashTable *ht, PLHashNumber keyHash,
+                           const void *key);
 
 PR_EXTERN(PLHashEntry *)
 PL_HashTableRawAdd(PLHashTable *ht, PLHashEntry **hep, PLHashNumber keyHash,

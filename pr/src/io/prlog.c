@@ -14,6 +14,17 @@
  * Communications Corporation.  Portions created by Netscape are
  * Copyright (C) 1998 Netscape Communications Corporation.  All Rights
  * Reserved.
+ *
+ * Contributors:
+ *
+ * This Original Code has been modified by IBM Corporation.
+ * Modifications made by IBM described herein are
+ * Copyright (c) International Business Machines Corporation, 2000.
+ * Modifications to Mozilla code or documentation identified per
+ * MPL Section 3.3
+ *
+ * Date         Modified by     Description of modification
+ * 04/10/2000   IBM Corp.       Added DebugBreak() definitions for OS/2
  */
 
 #include "primpl.h"
@@ -55,7 +66,7 @@ static PRLock *_pr_logLock;
 
 #endif
 
-#if defined(XP_PC) && !defined(XP_OS2_VACPP)
+#if defined(XP_PC)
 #define strcasecmp stricmp
 #define strncasecmp strnicmp
 #endif
@@ -104,7 +115,7 @@ static FILE *logFile = NULL;
 static PRFileDesc *logFile = 0;
 #endif
 
-#define LINE_BUF_SIZE                200
+#define LINE_BUF_SIZE                512
 #define DEFAULT_BUF_SIZE        16384
 
 #ifdef _PR_NEED_STRCASECMP
@@ -170,7 +181,7 @@ void _PR_InitLog(void)
         PRInt32 bufSize = DEFAULT_BUF_SIZE;
         while (pos < evlen) {
             PRIntn level = 1, count = 0, delta = 0;
-            count = sscanf(&ev[pos], "%64[A-Za-z0-9]%n:%d%n",
+            count = sscanf(&ev[pos], "%64[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
             if (count == 0) break;
@@ -255,7 +266,7 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
         while (pos < evlen) {
             PRIntn level = 1, count = 0, delta = 0;
 
-            count = sscanf(&ev[pos], "%64[A-Za-z0-9]%n:%d%n",
+            count = sscanf(&ev[pos], "%64[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
             if (count == 0) break;
@@ -432,6 +443,24 @@ PR_IMPLEMENT(void) PR_Abort(void)
 }
 
 #ifdef DEBUG
+#if defined(XP_OS2)
+/*
+ * Added definitions for DebugBreak() for 2 different OS/2 compilers.
+ * Doing the int3 on purpose for Visual Age so that a developer can
+ * step over the instruction if so desired.  Not always possible if
+ * trapping due to exception handling IBM-AKR
+ */
+#if defined(XP_OS2_VACPP)
+#include <builtin.h>
+static void DebugBreak(void) { _interrupt(3); }
+#elif defined(XP_OS2_EMX)
+/* Force a trap */
+static void DebugBreak(void) { int *pTrap=NULL; *pTrap = 1; }
+#else
+static void DebugBreak(void) { }
+#endif
+#endif /* XP_OS2 */
+
 PR_IMPLEMENT(void) PR_Assert(const char *s, const char *file, PRIntn ln)
 {
     PR_LogPrint("Assertion failure: %s, at %s:%d\n", s, file, ln);
@@ -441,7 +470,7 @@ PR_IMPLEMENT(void) PR_Assert(const char *s, const char *file, PRIntn ln)
 #ifdef XP_MAC
     dprintf("Assertion failure: %s, at %s:%d\n", s, file, ln);
 #endif
-#ifdef WIN32
+#if defined(WIN32) || defined(XP_OS2)
     DebugBreak();
 #endif
 #ifndef XP_MAC

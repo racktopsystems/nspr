@@ -25,6 +25,10 @@ CC			= gcc
 CCC			= g++
 RANLIB			= ranlib
 
+ifndef OBJECT_FMT
+OBJECT_FMT		:= $(shell if echo __ELF__ | $${CC:-cc} -E - | grep -q __ELF__ ; then echo a.out ; else echo ELF ; fi)
+endif
+
 OS_REL_CFLAGS		=
 ifeq (86,$(findstring 86,$(OS_TEST)))
 CPU_ARCH		= x86
@@ -44,25 +48,27 @@ endif
 
 ARCH			= netbsd
 
+ifeq ($(OBJECT_FMT),ELF)
+DLL_SUFFIX		= so
+else
 DLL_SUFFIX		= so.1.0
+# XXX work around a bug in the a.out ld(1).
+OS_LIBS			=
+endif
 
-DSO_CFLAGS		= -fPIC
+DSO_CFLAGS		= -fPIC -DPIC
 DSO_LDFLAGS		=
-DSO_LDOPTS		= -Bshareable
-ifeq ($(OS_TEST),alpha)
 DSO_LDOPTS		= -shared
-endif
-ifeq ($(OS_TEST),mips)
-DSO_LDOPTS		= -shared
-endif
-ifeq ($(OS_TEST),pmax)  
-DSO_LDOPTS		= -shared
+ifeq ($(OBJECT_FMT),ELF)
+DSO_LDOPTS		+=-Wl,-soname,lib$(LIBRARY_NAME)$(LIBRARY_VERSION).$(DLL_SUFFIX)
 endif
 
 ifdef LIBRUNPATH
-DSO_LDOPTS		+= -R$(LIBRUNPATH)
+#DSO_LDOPTS		+= -R$(LIBRUNPATH)
+DSO_LDOPTS		+= -Wl,-R$(LIBRUNPATH)
 endif
 
-MKSHLIB			= $(LD) $(DSO_LDOPTS)
+#MKSHLIB			= $(LD) $(DSO_LDOPTS)
+MKSHLIB			= $(CC) $(DSO_LDOPTS)
 
 G++INCLUDES		= -I/usr/include/g++

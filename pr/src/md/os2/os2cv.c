@@ -219,7 +219,7 @@ static void md_PostNotifyToCvar(_MDCVar *cvar, _MDLock *lock,
  *          0 when it succeeds.
  *
  */
-PR_IMPLEMENT(PRInt32) 
+PRInt32 
 _PR_MD_NEW_CV(_MDCVar *cv)
 {
     cv->magic = _MD_MAGIC_CV;
@@ -230,7 +230,7 @@ _PR_MD_NEW_CV(_MDCVar *cv)
     return 0;
 } 
 
-PR_IMPLEMENT(void) _PR_MD_FREE_CV(_MDCVar *cv)
+void _PR_MD_FREE_CV(_MDCVar *cv)
 {
     cv->magic = (PRUint32)-1;
     return;
@@ -239,7 +239,7 @@ PR_IMPLEMENT(void) _PR_MD_FREE_CV(_MDCVar *cv)
 /*
  *  _PR_MD_WAIT_CV() -- Wait on condition variable
  */
-PR_IMPLEMENT(void) 
+void 
 _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
 {
     PRThread *thred = _PR_MD_CURRENT_THREAD();
@@ -261,7 +261,7 @@ _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
     rv = DosWaitEventSem(thred->md.blocked_sema.sem, msecs);
     DosResetEventSem(thred->md.blocked_sema.sem, &count);
 
-    _MD_LOCK(lock);
+    DosRequestMutexSem((lock->mutex), SEM_INDEFINITE_WAIT);
 
     PR_ASSERT(rv == NO_ERROR || rv == ERROR_TIMEOUT);
 
@@ -306,21 +306,47 @@ _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
     return;
 } /* --- end _PR_MD_WAIT_CV() --- */
 
-PR_IMPLEMENT(void)
+void
 _PR_MD_NOTIFY_CV(_MDCVar *cv, _MDLock *lock)
 {
     md_PostNotifyToCvar(cv, lock, PR_FALSE);
     return;
 }
 
-PR_IMPLEMENT(void)
+void
 _PR_MD_NOTIFYALL_CV(_MDCVar *cv, _MDLock *lock)
 {
     md_PostNotifyToCvar(cv, lock, PR_TRUE);
     return;
 }
 
-PR_IMPLEMENT(void)
+PRStatus
+_PR_MD_NEW_LOCK(_MDLock *lock)
+{
+    DosCreateMutexSem(0, &(lock->mutex), 0, 0);
+    (lock)->notified.length=0;
+    (lock)->notified.link=NULL;
+    return PR_SUCCESS;
+}
+
+void
+_PR_MD_FREE_LOCK(_MDLock *lock)
+{
+    DosCloseMutexSem(lock->mutex);
+}
+
+void _PR_MD_LOCK(_MDLock *lock)
+{
+    DosRequestMutexSem(lock->mutex, SEM_INDEFINITE_WAIT);
+}
+
+PRBool
+_PR_MD_TEST_AND_LOCK(_MDLock *lock)
+{
+    DosRequestMutexSem(lock->mutex, SEM_INDEFINITE_WAIT);
+    return PR_SUCCESS;
+}
+void
 _PR_MD_UNLOCK(_MDLock *lock)
 {
     if (0 != lock->notified.length) {
