@@ -774,7 +774,7 @@ PR_IMPLEMENT(PRTimeParameters)
 PR_USPacificTimeParameters(const PRExplodedTime *gmt)
 {
     PRTimeParameters retVal;
-    PRExplodedTime std;
+    PRExplodedTime st;
 
     /*
      * Based on geographic location and GMT, figure out offset of
@@ -789,32 +789,32 @@ PR_USPacificTimeParameters(const PRExplodedTime *gmt)
      * is ignored.
      */
 
-    std.tm_usec = gmt->tm_usec;
-    std.tm_sec = gmt->tm_sec;
-    std.tm_min = gmt->tm_min;
-    std.tm_hour = gmt->tm_hour;
-    std.tm_mday = gmt->tm_mday;
-    std.tm_month = gmt->tm_month;
-    std.tm_year = gmt->tm_year;
-    std.tm_wday = gmt->tm_wday;
-    std.tm_yday = gmt->tm_yday;
+    st.tm_usec = gmt->tm_usec;
+    st.tm_sec = gmt->tm_sec;
+    st.tm_min = gmt->tm_min;
+    st.tm_hour = gmt->tm_hour;
+    st.tm_mday = gmt->tm_mday;
+    st.tm_month = gmt->tm_month;
+    st.tm_year = gmt->tm_year;
+    st.tm_wday = gmt->tm_wday;
+    st.tm_yday = gmt->tm_yday;
 
     /* Apply the offset to GMT to obtain the local standard time */
-    ApplySecOffset(&std, retVal.tp_gmt_offset);
+    ApplySecOffset(&st, retVal.tp_gmt_offset);
 
     /*
      * Apply the rules on standard time or GMT to obtain daylight saving
      * time offset.  In this implementation, we use the US DST rule.
      */
-    if (std.tm_month < 3) {
+    if (st.tm_month < 3) {
         retVal.tp_dst_offset = 0L;
-    } else if (std.tm_month == 3) {
-        if (std.tm_wday == 0) {
+    } else if (st.tm_month == 3) {
+        if (st.tm_wday == 0) {
             /* A Sunday */
-            if (std.tm_mday <= 7) {
+            if (st.tm_mday <= 7) {
                 /* First Sunday */
                 /* 01:59:59 PST -> 03:00:00 PDT */
-                if (std.tm_hour < 2) {
+                if (st.tm_hour < 2) {
                     retVal.tp_dst_offset = 0L;
                 } else {
                     retVal.tp_dst_offset = 3600L;
@@ -825,7 +825,7 @@ PR_USPacificTimeParameters(const PRExplodedTime *gmt)
             }
         } else {
             /* Not a Sunday.  See if before first Sunday or after */
-            if (std.tm_wday + 1 <= std.tm_mday) {
+            if (st.tm_wday + 1 <= st.tm_mday) {
                 /* After first Sunday */
                 retVal.tp_dst_offset = 3600L;
             } else {
@@ -833,14 +833,14 @@ PR_USPacificTimeParameters(const PRExplodedTime *gmt)
                 retVal.tp_dst_offset = 0L;
             } 
         }
-    } else if (std.tm_month < 9) {
+    } else if (st.tm_month < 9) {
         retVal.tp_dst_offset = 3600L;
-    } else if (std.tm_month == 9) {
-        if (std.tm_wday == 0) {
-            if (31 - std.tm_mday < 7) {
+    } else if (st.tm_month == 9) {
+        if (st.tm_wday == 0) {
+            if (31 - st.tm_mday < 7) {
                 /* Last Sunday */
                 /* 01:59:59 PDT -> 01:00:00 PST */
-                if (std.tm_hour < 1) {
+                if (st.tm_hour < 1) {
                     retVal.tp_dst_offset = 3600L;
                 } else {
                     retVal.tp_dst_offset = 0L;
@@ -851,7 +851,7 @@ PR_USPacificTimeParameters(const PRExplodedTime *gmt)
             }
         } else {
             /* See if before or after last Sunday */
-            if (7 - std.tm_wday <= 31 - std.tm_mday) {
+            if (7 - st.tm_wday <= 31 - st.tm_mday) {
                 /* before last Sunday */
                 retVal.tp_dst_offset = 3600L;
             } else {
@@ -1662,15 +1662,14 @@ PR_FormatTime(char *buf, int buflen, const char *fmt, const PRExplodedTime *tm)
 
 /*
  * On some platforms, for example SunOS 4, struct tm has two additional
- * fields: tm_zone and tm_gmtoff.  The following code attempts to obtain
- * values for these two fields.
+ * fields: tm_zone and tm_gmtoff.
  */
 
-#if defined(SUNOS4) || (__GLIBC__ >= 2) || defined(XP_BEOS)
-    if (mktime(&a) == -1) {
-        PR_snprintf(buf, buflen, "can't get timezone");
-        return 0;
-    }
+#if defined(SUNOS4) || (__GLIBC__ >= 2) || defined(XP_BEOS) \
+        || defined(NETBSD) || defined(OPENBSD) || defined(FREEBSD) \
+        || defined(DARWIN)
+    a.tm_zone = NULL;
+    a.tm_gmtoff = tm->tm_params.tp_gmt_offset + tm->tm_params.tp_dst_offset;
 #endif
 
     return strftime(buf, buflen, fmt, &a);

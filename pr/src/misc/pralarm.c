@@ -116,7 +116,7 @@ static PRIntervalTime pr_PredictNextNotifyTime(PRAlarmID *id)
     id->lastNotify = id->nextNotify;  /* just keeping track of things */
     id->nextNotify = (PRIntervalTime)(offsetFromEpoch + 0.5);
 
-    delta = id->nextNotify - id->nextNotify;
+    delta = id->nextNotify - id->lastNotify;
     return delta;
 }  /* pr_PredictNextNotifyTime */
 
@@ -180,7 +180,7 @@ static void PR_CALLBACK pr_alarmNotifier(void *arg)
 
 }  /* pr_alarm_notifier */
 
-PR_IMPLEMENT(PRAlarm*) PR_CreateAlarm()
+PR_IMPLEMENT(PRAlarm*) PR_CreateAlarm(void)
 {
     PRAlarm *alarm = PR_NEWZAP(PRAlarm);
     if (alarm != NULL)

@@ -52,6 +52,10 @@ PR_BEGIN_EXTERN_C
 /* Typedefs */
 typedef struct PRDir            PRDir;
 typedef struct PRDirEntry       PRDirEntry;
+#ifdef MOZ_UNICODE
+typedef struct PRDirUTF16       PRDirUTF16;
+typedef struct PRDirEntryUTF16  PRDirEntryUTF16;
+#endif /* MOZ_UNICODE */
 typedef struct PRFileDesc       PRFileDesc;
 typedef struct PRFileInfo       PRFileInfo;
 typedef struct PRFileInfo64     PRFileInfo64;
@@ -135,6 +139,10 @@ typedef enum PRTransmitFileFlags {
 #define PR_AF_INET6 100
 #endif
 
+#ifndef PR_AF_UNSPEC
+#define PR_AF_UNSPEC 0
+#endif
+
 /*
 **************************************************************************
 ** A network address
@@ -156,7 +164,7 @@ struct PRIPv6Addr {
 #define pr_s6_addr		_S6_un._S6_u8
 #define pr_s6_addr16	_S6_un._S6_u16
 #define pr_s6_addr32	_S6_un._S6_u32
-#define pr_s6_addr64 	_S6_un._S6_addr64
+#define pr_s6_addr64 	_S6_un._S6_u64
 
 typedef struct PRIPv6Addr PRIPv6Addr;
 
@@ -186,10 +194,15 @@ union PRNetAddr {
         PRIPv6Addr ip;                  /* the actual 128 bits of address */
         PRUint32 scope_id;              /* set of interfaces for a scope */
     } ipv6;
-#if defined(XP_UNIX)
+#if defined(XP_UNIX) || defined(XP_OS2)
     struct {                            /* Unix domain socket address */
         PRUint16 family;                /* address family (AF_UNIX) */
+#ifdef XP_OS2
+        char path[108];                 /* null-terminated pathname */
+                                        /* bind fails if size is not 108. */
+#else
         char path[104];                 /* null-terminated pathname */
+#endif
     } local;
 #endif
 };
@@ -650,6 +663,14 @@ NSPR_API(PRFileDesc*) PR_Open(const char *name, PRIntn flags, PRIntn mode);
 NSPR_API(PRFileDesc*) PR_OpenFile(
     const char *name, PRIntn flags, PRIntn mode);
 
+#ifdef MOZ_UNICODE
+/*
+ * EXPERIMENTAL: This function may be removed in a future release.
+ */
+NSPR_API(PRFileDesc*) PR_OpenFileUTF16(
+    const PRUnichar *name, PRIntn flags, PRIntn mode);
+#endif /* MOZ_UNICODE */
+
 /*
  **************************************************************************
  * FUNCTION: PR_Close
@@ -830,6 +851,13 @@ struct PRFileInfo64 {
 NSPR_API(PRStatus) PR_GetFileInfo(const char *fn, PRFileInfo *info);
 NSPR_API(PRStatus) PR_GetFileInfo64(const char *fn, PRFileInfo64 *info);
 
+#ifdef MOZ_UNICODE
+/*
+ * EXPERIMENTAL: This function may be removed in a future release.
+ */
+NSPR_API(PRStatus) PR_GetFileInfo64UTF16(const PRUnichar *fn, PRFileInfo64 *info);
+#endif /* MOZ_UNICODE */
+
 /*
  **************************************************************************
  * FUNCTION: PR_GetOpenFileInfo, PR_GetOpenFileInfo64
@@ -984,6 +1012,13 @@ struct PRDirEntry {
     const char *name;        /* name of entry, relative to directory name */
 };
 
+#ifdef MOZ_UNICODE
+struct PRDirEntryUTF16 {
+    const PRUnichar *name;   /* name of entry in UTF16, relative to
+                              * directory name */
+};
+#endif /* MOZ_UNICODE */
+
 #if !defined(NO_NSPR_10_SUPPORT)
 #define PR_DirName(dirEntry)	(dirEntry->name)
 #endif
@@ -1009,6 +1044,13 @@ struct PRDirEntry {
  */
 
 NSPR_API(PRDir*) PR_OpenDir(const char *name);
+
+#ifdef MOZ_UNICODE
+/*
+ * EXPERIMENTAL: This function may be removed in a future release.
+ */
+NSPR_API(PRDirUTF16*) PR_OpenDirUTF16(const PRUnichar *name);
+#endif /* MOZ_UNICODE */
 
 /*
  *************************************************************************
@@ -1043,6 +1085,13 @@ typedef enum PRDirFlags {
 
 NSPR_API(PRDirEntry*) PR_ReadDir(PRDir *dir, PRDirFlags flags);
 
+#ifdef MOZ_UNICODE
+/*
+ * EXPERIMENTAL: This function may be removed in a future release.
+ */
+NSPR_API(PRDirEntryUTF16*) PR_ReadDirUTF16(PRDirUTF16 *dir, PRDirFlags flags);
+#endif /* MOZ_UNICODE */
+
 /*
  *************************************************************************
  * FUNCTION: PR_CloseDir
@@ -1061,6 +1110,13 @@ NSPR_API(PRDirEntry*) PR_ReadDir(PRDir *dir, PRDirFlags flags);
  */
 
 NSPR_API(PRStatus) PR_CloseDir(PRDir *dir);
+
+#ifdef MOZ_UNICODE
+/*
+ * EXPERIMENTAL: This function may be removed in a future release.
+ */
+NSPR_API(PRStatus) PR_CloseDirUTF16(PRDirUTF16 *dir);
+#endif /* MOZ_UNICODE */
 
 /*
  *************************************************************************
@@ -1240,7 +1296,7 @@ NSPR_API(PRStatus) PR_Connect(
  *         PR_Poll()
  * RETURN: PRStatus
  *     If the nonblocking connect has successfully completed,
- *     PR_GetConnectStatus returns PR_SUCCESS.  If PR_GetConnectStatus()
+ *     PR_ConnectContinue returns PR_SUCCESS.  If PR_ConnectContinue()
  *     returns PR_FAILURE, call PR_GetError():
  *     - PR_IN_PROGRESS_ERROR: the nonblocking connect is still in
  *       progress and has not completed yet.  The caller should poll
@@ -1880,9 +1936,12 @@ struct PRPollDesc {
 ** DESCRIPTION:
 **
 ** The call returns as soon as I/O is ready on one or more of the underlying
-** file/socket objects. A count of the number of ready descriptors is
+** socket objects. A count of the number of ready descriptors is
 ** returned unless a timeout occurs in which case zero is returned.
 **
+** PRPollDesc.fd should be set to a pointer to a PRFileDesc object
+** representing a socket. This field can be set to NULL to indicate to
+** PR_Poll that this PRFileDesc object should be ignored.
 ** PRPollDesc.in_flags should be set to the desired request
 ** (read/write/except or some combination). Upon successful return from
 ** this call PRPollDesc.out_flags will be set to indicate what kind of

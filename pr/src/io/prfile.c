@@ -203,7 +203,7 @@ static PRStatus PR_CALLBACK PipeSync(PRFileDesc *fd)
 	return PR_SUCCESS;
 }
 
-static PRStatus PR_CALLBACK FileInfo(PRFileDesc *fd, PRFileInfo *info)
+static PRStatus PR_CALLBACK FileGetInfo(PRFileDesc *fd, PRFileInfo *info)
 {
 	PRInt32 rv;
 
@@ -214,7 +214,7 @@ static PRStatus PR_CALLBACK FileInfo(PRFileDesc *fd, PRFileInfo *info)
 	return PR_SUCCESS;
 }
 
-static PRStatus PR_CALLBACK FileInfo64(PRFileDesc *fd, PRFileInfo64 *info)
+static PRStatus PR_CALLBACK FileGetInfo64(PRFileDesc *fd, PRFileInfo64 *info)
 {
 #ifdef XP_MAC
 #pragma unused( fd, info )
@@ -276,8 +276,8 @@ static PRIOMethods _pr_fileMethods = {
     FileSync,
     FileSeek,
     FileSeek64,
-    FileInfo,
-    FileInfo64,
+    FileGetInfo,
+    FileGetInfo64,
     (PRWritevFN)_PR_InvalidInt,		
     (PRConnectFN)_PR_InvalidStatus,		
     (PRAcceptFN)_PR_InvalidDesc,		
@@ -422,14 +422,18 @@ PRInt32 PR_GetSysfdTableMax(void)
     return rlim.rlim_max;
 #elif defined(AIX) || defined(NEXTSTEP) || defined(QNX)
     return sysconf(_SC_OPEN_MAX);
-#elif defined(WIN32) || defined(OS2)
+#elif defined(WIN32)
     /*
      * There is a systemwide limit of 65536 user handles.
-     * Not sure on OS/2, but sounds good.
      */
     return 16384;
 #elif defined (WIN16)
     return FOPEN_MAX;
+#elif defined(XP_OS2)
+    ULONG ulReqCount = 0;
+    ULONG ulCurMaxFH = 0;
+    DosSetRelMaxFH(&ulReqCount, &ulCurMaxFH);
+    return ulCurMaxFH;
 #elif defined (XP_MAC) || defined(XP_BEOS)
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
    return -1;
@@ -464,9 +468,19 @@ PRInt32 PR_SetSysfdTableSize(int table_size)
     }
 
     return rlim.rlim_cur;
+#elif defined(XP_OS2)
+    PRInt32 tableMax = PR_GetSysfdTableMax();
+    if (table_size > tableMax) {
+      APIRET rc = NO_ERROR;
+      rc = DosSetMaxFH(table_size);
+      if (rc == NO_ERROR)
+        return table_size;
+      else
+        return -1;
+    } 
+    return tableMax;
 #elif defined(AIX) || defined(NEXTSTEP) || defined(QNX) \
-        || defined(WIN32) || defined(WIN16) || defined(OS2) \
-        || defined(XP_BEOS)
+        || defined(WIN32) || defined(WIN16) || defined(XP_BEOS)
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return -1;
 #elif defined (XP_MAC)
@@ -735,7 +749,7 @@ PR_IMPLEMENT(PRStatus) PR_CreatePipe(
     (*readPipe)->secret->inheritable = _PR_TRI_TRUE;
     (*writePipe)->secret->inheritable = _PR_TRI_TRUE;
     return PR_SUCCESS;
-#elif defined(XP_UNIX) || defined(XP_OS2)
+#elif defined(XP_UNIX) || defined(XP_OS2) || defined(XP_BEOS)
 #ifdef XP_OS2
     HFILE pipefd[2];
 #else
@@ -765,9 +779,13 @@ PR_IMPLEMENT(PRStatus) PR_CreatePipe(
         close(pipefd[1]);
         return PR_FAILURE;
     }
-    _MD_MakeNonblock(*readPipe);
+#ifndef XP_BEOS /* Pipes are nonblocking on BeOS */
+    _PR_MD_MAKE_NONBLOCK(*readPipe);
+#endif
     _PR_MD_INIT_FD_INHERITABLE(*readPipe, PR_FALSE);
-    _MD_MakeNonblock(*writePipe);
+#ifndef XP_BEOS /* Pipes are nonblocking on BeOS */
+    _PR_MD_MAKE_NONBLOCK(*writePipe);
+#endif
     _PR_MD_INIT_FD_INHERITABLE(*writePipe, PR_FALSE);
     return PR_SUCCESS;
 #else
@@ -775,3 +793,51 @@ PR_IMPLEMENT(PRStatus) PR_CreatePipe(
     return PR_FAILURE;
 #endif
 }
+
+#ifdef MOZ_UNICODE
+/* ================ UTF16 Interfaces ================================ */
+PR_IMPLEMENT(PRFileDesc*) PR_OpenFileUTF16(
+    const PRUnichar *name, PRIntn flags, PRIntn mode)
+{ 
+    PRInt32 osfd;
+    PRFileDesc *fd = 0;
+#if !defined(XP_UNIX) /* BugZilla: 4090 */
+    PRBool  appendMode = ( PR_APPEND & flags )? PR_TRUE : PR_FALSE;
+#endif
+   
+    if (!_pr_initialized) _PR_ImplicitInitialization();
+  
+    /* Map pr open flags and mode to os specific flags */
+    osfd = _PR_MD_OPEN_FILE_UTF16(name, flags, mode);
+    if (osfd != -1) {
+        fd = PR_AllocFileDesc(osfd, &_pr_fileMethods);
+        if (!fd) {
+            (void) _PR_MD_CLOSE_FILE(osfd);
+        } else {
+#if !defined(XP_UNIX) /* BugZilla: 4090 */
+            fd->secret->appendMode = appendMode;
+#endif
+            _PR_MD_INIT_FD_INHERITABLE(fd, PR_FALSE);
+        }
+    }
+    return fd;
+}
+ 
+PR_IMPLEMENT(PRStatus) PR_GetFileInfo64UTF16(const PRUnichar *fn, PRFileInfo64 *info)
+{
+#ifdef XP_MAC
+#pragma unused (fn, info)
+#endif
+    PRInt32 rv;
+
+    if (!_pr_initialized) _PR_ImplicitInitialization();
+    rv = _PR_MD_GETFILEINFO64_UTF16(fn, info);
+    if (rv < 0) {
+        return PR_FAILURE;
+    } else {
+        return PR_SUCCESS;
+    }
+}
+
+/* ================ UTF16 Interfaces ================================ */
+#endif /* MOZ_UNICODE */

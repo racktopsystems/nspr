@@ -47,18 +47,32 @@
 
 #include <errno.h>
 
-#ifdef XP_OS2_EMX
-/*
- * EMX-specific tweaks:
- *    o Use stricmp instead of strcmpi.
- *    o Use errno rather than sock_errno()
- *    o Use close rather than soclose
- *    o Ignore sock_init calls.
- */
-#define strcmpi stricmp 
-#define sock_errno() errno
-#define soclose close
-#define sock_init()
+#ifdef XP_OS2_VACPP
+/* TODO RAMSEMs need to be written for GCC/EMX */
+#define USE_RAMSEM
+#endif
+
+#ifdef USE_RAMSEM
+#pragma pack(4)
+
+#pragma pack(2)
+typedef struct _RAMSEM
+{
+   ULONG   ulTIDPID;
+   ULONG   hevSem;
+   ULONG   cLocks;
+   USHORT  cWaiting;
+   USHORT  cPosts;
+} RAMSEM, *PRAMSEM;
+
+typedef struct _CRITICAL_SECTION
+{
+    ULONG ulReserved[4]; /* Same size as RAMSEM */
+} CRITICAL_SECTION, *PCRITICAL_SECTION, *LPCRITICAL_SECTION;
+#pragma pack(4)
+
+APIRET _Optlink SemRequest486(PRAMSEM, ULONG);
+APIRET _Optlink SemReleasex86(PRAMSEM, ULONG);
 #endif
 
 /*
@@ -70,7 +84,9 @@
 #define _PR_SI_ARCHITECTURE   "x86"    /* XXXMB hardcode for now */
 
 #define HAVE_DLL
+#define _PR_GLOBAL_THREADS_ONLY
 #undef  HAVE_THREAD_AFFINITY
+#define _PR_HAVE_THREADSAFE_GETHOST
 #define _PR_HAVE_ATOMIC_OPS
 
 #define HANDLE unsigned long
@@ -162,7 +178,11 @@ struct _MDNotified {
 };
 
 struct _MDLock {
-    HMTX mutex;          /* this is recursive on NT */
+#ifdef USE_RAMSEM
+    CRITICAL_SECTION mutex;            /* this is recursive on NT */
+#else
+    HMTX mutex;                        /* this is recursive on NT */
+#endif
 
     /*
      * When notifying cvars, there is no point in actually
@@ -222,6 +242,9 @@ extern PRInt32 _MD_CloseFile(PRInt32 osfd);
 
 /* --- Socket IO stuff --- */
 
+#define TCPV40HDRS
+#define BSD_SELECT
+
 /* The ones that don't map directly may need to be re-visited... */
 #ifdef XP_OS2_VACPP
 #define EPIPE                     EBADF
@@ -258,37 +281,31 @@ extern void _MD_MakeNonblock(PRFileDesc *f);
 #define _MD_INIT_FD_INHERITABLE       (_PR_MD_INIT_FD_INHERITABLE)
 #define _MD_QUERY_FD_INHERITABLE      (_PR_MD_QUERY_FD_INHERITABLE)
 #define _MD_SHUTDOWN                  (_PR_MD_SHUTDOWN)
-#define _MD_LISTEN(s, backlog)        listen(s->secret->md.osfd,backlog)
+#define _MD_LISTEN                    _PR_MD_LISTEN
 extern PRInt32 _MD_CloseSocket(PRInt32 osfd);
 #define _MD_CLOSE_SOCKET              _MD_CloseSocket
 #define _MD_SENDTO                    (_PR_MD_SENDTO)
 #define _MD_RECVFROM                  (_PR_MD_RECVFROM)
-#define _MD_SOCKETPAIR(s, type, proto, sv) -1
+#define _MD_SOCKETPAIR                (_PR_MD_SOCKETPAIR)
 #define _MD_GETSOCKNAME               (_PR_MD_GETSOCKNAME)
 #define _MD_GETPEERNAME               (_PR_MD_GETPEERNAME)
 #define _MD_GETSOCKOPT                (_PR_MD_GETSOCKOPT)
 #define _MD_SETSOCKOPT                (_PR_MD_SETSOCKOPT)
 
-#ifdef XP_OS2_EMX
-extern PRInt32 _MD_SELECT(int nfds, fd_set *readfds, fd_set *writefds,
-                                    fd_set *exceptfds, struct timeval *timeout);
-#else
-#define _MD_SELECT                    select
-#endif
-
 #define _MD_FSYNC                     _PR_MD_FSYNC
 #define _MD_SET_FD_INHERITABLE        (_PR_MD_SET_FD_INHERITABLE)
 
+#ifdef _PR_HAVE_ATOMIC_OPS
 #define _MD_INIT_ATOMIC()
 #define _MD_ATOMIC_INCREMENT          _PR_MD_ATOMIC_INCREMENT
 #define _MD_ATOMIC_ADD                _PR_MD_ATOMIC_ADD
 #define _MD_ATOMIC_DECREMENT          _PR_MD_ATOMIC_DECREMENT
 #define _MD_ATOMIC_SET                _PR_MD_ATOMIC_SET
+#endif
 
 #define _MD_INIT_IO                   (_PR_MD_INIT_IO)
 #define _MD_PR_POLL                   (_PR_MD_PR_POLL)
 
-/* win95 doesn't have async IO */
 #define _MD_SOCKET                    (_PR_MD_SOCKET)
 extern PRInt32 _MD_SocketAvailable(PRFileDesc *fd);
 #define _MD_SOCKETAVAILABLE           _MD_SocketAvailable
@@ -349,11 +366,33 @@ extern PRInt32 _MD_Accept(PRFileDesc *fd, PRNetAddr *raddr, PRUint32 *rlen,
 #define _PR_LOCK                      _MD_LOCK
 #define _PR_UNLOCK					  _MD_UNLOCK
 
+#ifdef USE_RAMSEM
 #define _MD_NEW_LOCK                  (_PR_MD_NEW_LOCK)
-#define _MD_FREE_LOCK                 (_PR_MD_FREE_LOCK)
-#define _MD_LOCK                      (_PR_MD_LOCK)
-#define _MD_TEST_AND_LOCK             (_PR_MD_TEST_AND_LOCK)
-#define _MD_UNLOCK                    (_PR_MD_UNLOCK)
+#define _MD_FREE_LOCK(lock)           (DosCloseEventSem(((PRAMSEM)(&((lock)->mutex)))->hevSem))
+#define _MD_LOCK(lock)                (SemRequest486(&((lock)->mutex), -1))
+#define _MD_TEST_AND_LOCK(lock)       (SemRequest486(&((lock)->mutex), -1),0)
+#define _MD_UNLOCK(lock)              \
+    PR_BEGIN_MACRO \
+    if (0 != (lock)->notified.length) { \
+        md_UnlockAndPostNotifies((lock), NULL, NULL); \
+    } else { \
+        SemReleasex86( &(lock)->mutex, 0 ); \
+    } \
+    PR_END_MACRO
+#else
+#define _MD_NEW_LOCK                  (_PR_MD_NEW_LOCK)
+#define _MD_FREE_LOCK(lock)           (DosCloseMutexSem((lock)->mutex))
+#define _MD_LOCK(lock)                (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT))
+#define _MD_TEST_AND_LOCK(lock)       (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT),0)
+#define _MD_UNLOCK(lock)              \
+    PR_BEGIN_MACRO \
+    if (0 != (lock)->notified.length) { \
+        md_UnlockAndPostNotifies((lock), NULL, NULL); \
+    } else { \
+        DosReleaseMutexSem((lock)->mutex); \
+    } \
+    PR_END_MACRO
+#endif
 
 /* --- lock and cv waiting --- */
 #define _MD_WAIT                      (_PR_MD_WAIT)
@@ -431,7 +470,8 @@ typedef struct __NSPR_TLS
 extern _NSPR_TLS*  pThreadLocalStorage;
 NSPR_API(void) _PR_MD_ENSURE_TLS(void);
 
-#define _MD_CURRENT_THREAD() pThreadLocalStorage->_pr_currentThread
+#define _MD_GET_ATTACHED_THREAD() pThreadLocalStorage->_pr_currentThread
+extern struct PRThread * _MD_CURRENT_THREAD(void);
 #define _MD_SET_CURRENT_THREAD(_thread) _PR_MD_ENSURE_TLS(); pThreadLocalStorage->_pr_currentThread = (_thread)
 
 #define _MD_LAST_THREAD() pThreadLocalStorage->_pr_thread_last_run
@@ -537,4 +577,6 @@ unsigned long _System _DLL_InitTerm( unsigned long mod_handle, unsigned long fla
 #define FreeLibrary(x) DosFreeModule((HMODULE)x)
 #define OutputDebugString(x)
                                
+extern int _MD_os2_get_nonblocking_connect_error(int osfd);
+
 #endif /* nspr_os2_defs_h___ */

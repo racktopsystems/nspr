@@ -57,7 +57,8 @@
 
 #define _PR_VMBASE	 	        0x30000000
 #define _PR_STACK_VMBASE	    0x50000000
-#define _MD_DEFAULT_STACK_SIZE	65536L
+#define _MD_DEFAULT_STACK_SIZE	(2*65536L)
+#define _MD_MINIMUM_STACK_SIZE	(2*65536L)
 #define _MD_MMAP_FLAGS		    MAP_PRIVATE
 
 #define NEED_TIME_R
@@ -71,7 +72,9 @@
 #define _PR_USE_POLL
 #define _PR_STAT_HAS_ONLY_ST_ATIME
 #ifdef _PR_INET6
+#define _PR_HAVE_INET_NTOP
 #define _PR_HAVE_GETHOSTBYNAME2
+#define _PR_HAVE_GETADDRINFO
 #endif
 #define _PR_HAVE_SYSV_SEMAPHORES
 #define PR_HAVE_SYSV_NAMED_SHARED_MEMORY
@@ -242,5 +245,7 @@ struct _MDCPU {
 #define _MD_SELECT	select
 #define _MD_POLL	poll
 #endif
+
+extern void _MD_aix_map_sendfile_error(int err);
 
 #endif /* nspr_aix_defs_h___ */

@@ -173,6 +173,8 @@ static PRInt32 NativeThreadPoll(
         {
             /* make poll() ignore this entry */
             syspoll[index].fd = -1;
+            syspoll[index].events = 0;
+            pds[index].out_flags = 0;
         }
     }
 
@@ -384,6 +386,10 @@ static PRInt32 NativeThreadSelect(
                 }
             }
         }
+        else
+        {
+            pd->out_flags = 0;
+        }
     }
 
     if (0 != ready) return ready;  /* no need to block */
@@ -396,8 +402,7 @@ retry:
     {
         PRInt32 ticksPerSecond = PR_TicksPerSecond();
         tv.tv_sec = remaining / ticksPerSecond;
-        tv.tv_usec = remaining - (ticksPerSecond * tv.tv_sec);
-        tv.tv_usec = (PR_USEC_PER_SEC * tv.tv_usec) / ticksPerSecond;
+        tv.tv_usec = PR_IntervalToMicroseconds( remaining % ticksPerSecond );
         tvp = &tv;
     }
 

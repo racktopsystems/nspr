@@ -164,7 +164,7 @@ PR_IMPLEMENT(PRStatus) PR_SetFDInheritable(
     PRFileDesc *fd,
     PRBool inheritable)
 {
-#if defined(XP_UNIX) || defined(WIN32) || defined(XP_OS2)
+#if defined(XP_UNIX) || defined(WIN32) || defined(XP_OS2) || defined(XP_BEOS)
     /*
      * Only a non-layered, NSPR file descriptor can be inherited
      * by a child process.
@@ -188,3 +188,12 @@ PR_IMPLEMENT(PRStatus) PR_SetFDInheritable(
     return PR_FAILURE;
 #endif
 }
+
+/*
+** This function only has a useful implementation in the debug build of
+** the pthreads version.
+*/
+PR_IMPLEMENT(void) PT_FPrintStats(PRFileDesc *debug_out, const char *msg)
+{
+    /* do nothing */
+}  /* PT_FPrintStats */

@@ -108,6 +108,9 @@ void _MD_unix_map_default_error(int err)
         case EFBIG:
             prError = PR_FILE_TOO_BIG_ERROR;
             break;
+        case EHOSTUNREACH:
+            prError = PR_HOST_UNREACHABLE_ERROR;
+            break;
         case EINPROGRESS:
             prError = PR_IN_PROGRESS_ERROR;
             break;
@@ -847,3 +850,10 @@ void _MD_solaris_map_sendfile_error(int err)
     _MD_unix_map_default_error(err) ;
 }
 #endif /* SOLARIS */
+
+#ifdef LINUX
+void _MD_linux_map_sendfile_error(int err)
+{
+    _MD_unix_map_default_error(err) ;
+}
+#endif /* LINUX */

@@ -91,7 +91,11 @@
 #define _PT_PTHREAD_MUTEXATTR_DESTROY     pthread_mutexattr_destroy
 #define _PT_PTHREAD_MUTEX_INIT(m, a)      pthread_mutex_init(&(m), &(a))
 #define _PT_PTHREAD_MUTEX_IS_LOCKED(m)    (EBUSY == pthread_mutex_trylock(&(m)))
+#if defined(DARWIN)
+#define _PT_PTHREAD_CONDATTR_INIT(x)      0
+#else
 #define _PT_PTHREAD_CONDATTR_INIT         pthread_condattr_init
+#endif
 #define _PT_PTHREAD_CONDATTR_DESTROY      pthread_condattr_destroy
 #define _PT_PTHREAD_COND_INIT(m, a)       pthread_cond_init(&(m), &(a))
 #endif
@@ -182,21 +186,20 @@
 #endif
 
 /*
- * These platforms don't have pthread_atfork()
+ * These platforms don't have sigtimedwait()
  */
-#if defined(_PR_DCETHREADS) || defined(FREEBSD) \
-	|| (defined(LINUX) && defined(__alpha)) \
-	|| defined(NETBSD) || defined(OPENBSD)
-#define PT_NO_ATFORK
+#if (defined(AIX) && !defined(AIX4_3_PLUS)) || defined(LINUX) \
+	|| defined(FREEBSD) || defined(NETBSD) || defined(OPENBSD) \
+	|| defined(BSDI) || defined(VMS) || defined(UNIXWARE) \
+	|| defined(DARWIN)
+#define PT_NO_SIGTIMEDWAIT
 #endif
 
 /*
- * These platforms don't have sigtimedwait()
+ * These platforms don't have pthread_kill()
  */
-#if (defined(AIX) && !defined(AIX4_3)) || defined(LINUX) \
-	|| defined(FREEBSD) || defined(NETBSD) || defined(OPENBSD) \
-	|| defined(BSDI) || defined(VMS) || defined(UNIXWARE)
-#define PT_NO_SIGTIMEDWAIT
+#if defined(DARWIN)
+#define pthread_kill(thread, sig) ENOSYS
 #endif
 
 #if defined(OSF1) || defined(VMS)
@@ -225,7 +228,7 @@
 #define PT_PRIO_MAX            sched_get_priority_max(SCHED_OTHER)
 #endif /* defined(_PR_DCETHREADS) */
 
-#elif defined(LINUX)
+#elif defined(LINUX) || defined(FREEBSD)
 #define PT_PRIO_MIN            sched_get_priority_min(SCHED_OTHER)
 #define PT_PRIO_MAX            sched_get_priority_max(SCHED_OTHER)
 #elif defined(NTO)
@@ -245,7 +248,10 @@
  */
 #define PT_PRIO_MIN            1
 #define PT_PRIO_MAX            127
-#elif defined(FREEBSD) || defined(NETBSD) || defined(OPENBSD) \
+#elif defined(OPENBSD)
+#define PT_PRIO_MIN            0
+#define PT_PRIO_MAX            31
+#elif defined(NETBSD) \
 	|| defined(BSDI) || defined(DARWIN) || defined(UNIXWARE) /* XXX */
 #define PT_PRIO_MIN            0
 #define PT_PRIO_MAX            126

@@ -85,7 +85,6 @@ PRThread *suspendAllThread = NULL;
 
 extern PRCList _pr_active_global_threadQ;
 extern PRCList _pr_active_local_threadQ;
-extern _PRCPU  *_pr_primordialCPU;
 
 static void _PR_DecrActiveThreadCount(PRThread *thread);
 static PRThread *_PR_AttachThread(PRThreadType, PRThreadPriority, PRThreadStack *);
@@ -1510,6 +1509,19 @@ PR_IMPLEMENT(PRThread*) PR_AttachThread(PRThreadType type,
 
 PR_IMPLEMENT(void) PR_DetachThread(void)
 {
+    /*
+     * On IRIX, Solaris, and Windows, foreign threads are detached when
+     * they terminate.
+     */
+#if !defined(IRIX) && !defined(WIN32) \
+        && !(defined(SOLARIS) && defined(_PR_GLOBAL_THREADS_ONLY))
+    PRThread *me;
+    if (_pr_initialized) {
+        me = _PR_MD_GET_ATTACHED_THREAD();
+        if ((me != NULL) && (me->flags & _PR_ATTACHED))
+            _PRI_DetachThread();
+    }
+#endif
 }
 
 void _PRI_DetachThread(void)

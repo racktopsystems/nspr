@@ -39,7 +39,7 @@
 
 SYSTEM_INFO=`uname -a`
 OS_ARCH=`uname -s`
-if [ $OS_ARCH = "Windows_NT" ]
+if [ $OS_ARCH = "Windows_NT" ] || [ $OS_ARCH = "OS/2" ]
 then
 	NULL_DEVICE=nul
 else
@@ -114,6 +114,7 @@ exit
 fdcach
 fileio
 foreign
+formattm
 fsync
 gethost
 getproto
@@ -132,6 +133,7 @@ joinuk
 joinuu
 layer
 lazyinit
+libfilename
 lltest
 lock
 lockfile
@@ -224,7 +226,7 @@ echo "\nNSPR Test Results - $OBJDIR\n"
 echo "BEGIN\t\t\t`date`"
 echo "NSPR_TEST_LOGFILE\t${LOGFILE}\n"
 echo "Test\t\t\tResult\n"
-if [ $OS_PLATFORM = "Windows_95" ] || [ $OS_PLATFORM = "Windows_98" ] || [ $OS_PLATFORM = "Windows_NT" ] ; then
+if [ $OS_PLATFORM = "Windows_95" ] || [ $OS_PLATFORM = "Windows_98" ] || [ $OS_PLATFORM = "Windows_NT" ] || [ $OS_PLATFORM = "OS/2" ] ; then
 	for prog in $TESTS
 	do
 		echo "$prog\c"
@@ -254,7 +256,7 @@ else
 		fi
 		wait $test_pid
 		test_rval=$?
-		[ sleep_pid -eq 0 ] || kill $sleep_pid >/dev/null 2>&1
+		[ $sleep_pid -eq 0 ] || kill $sleep_pid >/dev/null 2>&1
 		if [ 0 = $test_rval ] ; then
 			echo "\t\t\tPassed";
 		else

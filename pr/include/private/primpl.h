@@ -144,6 +144,9 @@ typedef struct _MDThread _MDThread;
 typedef struct _MDThreadStack _MDThreadStack;
 typedef struct _MDSemaphore _MDSemaphore;
 typedef struct _MDDir _MDDir;
+#ifdef MOZ_UNICODE
+typedef struct _MDDirUTF16 _MDDirUTF16;
+#endif /* MOZ_UNICODE */
 typedef struct _MDFileDesc _MDFileDesc;
 typedef struct _MDProcess _MDProcess;
 typedef struct _MDFileMap _MDFileMap;
@@ -216,22 +219,13 @@ typedef struct PTDebug
     PRUintn cvars_notified, delayed_cv_deletes;
 } PTDebug;
 
-NSPR_API(void) PT_GetStats(PTDebug* here);
-NSPR_API(void) PT_FPrintStats(PRFileDesc *fd, const char *msg);
-
-#else
-
-typedef PRUintn PTDebug;
-#define PT_GetStats(_p)
-#define PT_FPrintStats(_fd, _msg)
-
 #endif /* defined(DEBUG) */
+
+NSPR_API(void) PT_FPrintStats(PRFileDesc *fd, const char *msg);
 
 #else /* defined(_PR_PTHREADS) */
 
-typedef PRUintn PTDebug;
-#define PT_GetStats(_p)
-#define PT_FPrintStats(_fd, _msg)
+NSPR_API(void) PT_FPrintStats(PRFileDesc *fd, const char *msg);
 
 /*
 ** This section is contains those parts needed to implement NSPR on
@@ -310,7 +304,8 @@ typedef struct _PRInterruptTable {
 #define _PR_CPU_PTR(_qp) \
     ((_PRCPU*) ((char*) (_qp) - offsetof(_PRCPU,links)))
 
-#if !defined(IRIX) && !defined(WIN32)
+#if !defined(IRIX) && !defined(WIN32) && !defined(XP_OS2) \
+        && !(defined(SOLARIS) && defined(_PR_GLOBAL_THREADS_ONLY))
 #define _MD_GET_ATTACHED_THREAD()        (_PR_MD_CURRENT_THREAD())
 #endif
 
@@ -1022,6 +1017,12 @@ extern PRStatus _PR_MD_CREATE_THREAD(
                         PRUint32 stackSize);
 #define    _PR_MD_CREATE_THREAD _MD_CREATE_THREAD
 
+extern void _PR_MD_JOIN_THREAD(_MDThread *md);
+#define    _PR_MD_JOIN_THREAD _MD_JOIN_THREAD
+
+extern void _PR_MD_END_THREAD(void);
+#define    _PR_MD_END_THREAD _MD_END_THREAD
+
 extern void _PR_MD_YIELD(void);
 #define    _PR_MD_YIELD _MD_YIELD
 
@@ -1137,6 +1138,24 @@ extern PRInt32 _PR_MD_MAKE_DIR(const char *name, PRIntn mode);
 
 extern PRInt32 _PR_MD_RMDIR(const char *name);
 #define _PR_MD_RMDIR _MD_RMDIR
+
+#ifdef MOZ_UNICODE
+/* UTF16 File I/O related */
+extern PRStatus _PR_MD_OPEN_DIR_UTF16(_MDDirUTF16 *md, const PRUnichar *name);
+#define    _PR_MD_OPEN_DIR_UTF16 _MD_OPEN_DIR_UTF16
+
+extern PRInt32 _PR_MD_OPEN_FILE_UTF16(const PRUnichar *name, PRIntn osflags, PRIntn mode);
+#define    _PR_MD_OPEN_FILE_UTF16 _MD_OPEN_FILE_UTF16
+
+extern PRUnichar * _PR_MD_READ_DIR_UTF16(_MDDirUTF16 *md, PRIntn flags);
+#define    _PR_MD_READ_DIR_UTF16 _MD_READ_DIR_UTF16
+
+extern PRInt32 _PR_MD_CLOSE_DIR_UTF16(_MDDirUTF16 *md);
+#define    _PR_MD_CLOSE_DIR_UTF16 _MD_CLOSE_DIR_UTF16
+
+extern PRInt32 _PR_MD_GETFILEINFO64_UTF16(const PRUnichar *fn, PRFileInfo64 *info);
+#define _PR_MD_GETFILEINFO64_UTF16 _MD_GETFILEINFO64_UTF16
+#endif /* MOZ_UNICODE */
 
 /* Socket I/O related */
 extern void _PR_MD_INIT_IO(void);
@@ -1376,7 +1395,7 @@ extern PRUintn _PR_NetAddrSize(const PRNetAddr* addr);
 ** struct sockaddr_in6.
 */
 
-#if defined(XP_UNIX)
+#if defined(XP_UNIX) || defined(XP_OS2)
 #define PR_NETADDR_SIZE(_addr) 					\
         ((_addr)->raw.family == PR_AF_INET		\
         ? sizeof((_addr)->inet)					\
@@ -1392,7 +1411,7 @@ extern PRUintn _PR_NetAddrSize(const PRNetAddr* addr);
 
 #else
 
-#if defined(XP_UNIX)
+#if defined(XP_UNIX) || defined(XP_OS2)
 #define PR_NETADDR_SIZE(_addr) 					\
         ((_addr)->raw.family == PR_AF_INET		\
         ? sizeof((_addr)->inet)					\
@@ -1716,12 +1735,26 @@ struct PRFilePrivate {
     PRBool  appendMode;                             
 #endif
     _MDFileDesc md;
+#ifdef _PR_STRICT_ADDR_LEN
+    PRUint16 af;        /* If the platform requires passing the exact
+                         * length of the sockaddr structure for the
+                         * address family of the socket to socket
+                         * functions like accept(), we need to save
+                         * the address family of the socket. */
+#endif
 };
 
 struct PRDir {
     PRDirEntry d;
     _MDDir md;
 };
+
+#ifdef MOZ_UNICODE
+struct PRDirUTF16 { 
+    PRDirEntry d; 
+    _MDDirUTF16 md; 
+}; 
+#endif /* MOZ_UNICODE */
 
 extern void _PR_InitSegs(void);
 extern void _PR_InitStacks(void);
@@ -1741,10 +1774,18 @@ extern void _PR_InitMW(void);
 extern void _PR_InitRWLocks(void);
 extern void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me);
 extern void _PR_CleanupThread(PRThread *thread);
+extern void _PR_CleanupCallOnce(void);
+extern void _PR_CleanupMW(void);
+extern void _PR_CleanupDtoa(void);
+extern void _PR_ShutdownLinker(void);
 extern void _PR_CleanupEnv(void);
 extern void _PR_CleanupIO(void);
+extern void _PR_CleanupNet(void);
 extern void _PR_CleanupLayerCache(void);
 extern void _PR_CleanupStacks(void);
+#ifdef WINNT
+extern void _PR_CleanupCPUs(void);
+#endif
 extern void _PR_CleanupThreads(void);
 extern void _PR_CleanupTPD(void);
 extern void _PR_Cleanup(void);
@@ -1800,7 +1841,7 @@ extern PRFileDesc *_pr_stderr;
 ** and functions with macros that expand to the native thread
 ** types and functions on each platform.
 */
-#if defined(_PR_PTHREADS)
+#if defined(_PR_PTHREADS) && !defined(_PR_DCETHREADS)
 #define _PR_ZONE_ALLOCATOR
 #endif
 

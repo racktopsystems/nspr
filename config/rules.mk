@@ -160,6 +160,19 @@ ALL_TRASH		= $(TARGETS) $(OBJS) $(filter-out . .., $(OBJDIR)) LOGS TAGS $(GARBAG
 			  $(NOSUCHFILE) \
 			  so_locations
 
+ifeq ($(OS_ARCH),OpenVMS)
+ALL_TRASH		+= $(wildcard *.c*_defines)
+ifdef SHARED_LIBRARY
+VMS_SYMVEC_FILE		= $(SHARED_LIBRARY:.$(DLL_SUFFIX)=_symvec.opt)
+VMS_SYMVEC_FILE_MODULE	= $(srcdir)/$(LIBRARY_NAME)_symvec.opt
+ALL_TRASH		+= $(VMS_SYMVEC_FILE)
+endif
+endif
+
+ifndef RELEASE_LIBS_DEST
+RELEASE_LIBS_DEST	= $(RELEASE_LIB_DIR)
+endif
+
 ifdef DIRS
 LOOP_OVER_DIRS		=					\
 	@for d in $(DIRS); do					\
@@ -206,10 +219,10 @@ ifdef RELEASE_BINS
 	$(NSINSTALL) -t -m 0755 $(RELEASE_BINS) $(DESTDIR)$(bindir)
 endif
 ifdef RELEASE_HEADERS
-	$(NSINSTALL) -t -m 0644 $(RELEASE_HEADERS) $(DESTDIR)$(includedir)
+	$(NSINSTALL) -t -m 0644 $(RELEASE_HEADERS) $(DESTDIR)$(includedir)/$(include_subdir)
 endif
 ifdef RELEASE_LIBS
-	$(NSINSTALL) -t -m 0755 $(RELEASE_LIBS) $(DESTDIR)$(libdir)
+	$(NSINSTALL) -t -m 0755 $(RELEASE_LIBS) $(DESTDIR)$(libdir)/$(lib_subdir)
 endif
 	+$(LOOP_OVER_DIRS)
 
@@ -238,13 +251,13 @@ ifdef RELEASE_LIBS
 	else \
 		true; \
 	fi
-	@if test ! -d $(RELEASE_LIB_DIR); then \
-		rm -rf $(RELEASE_LIB_DIR); \
-		$(NSINSTALL) -D $(RELEASE_LIB_DIR);\
+	@if test ! -d $(RELEASE_LIBS_DEST); then \
+		rm -rf $(RELEASE_LIBS_DEST); \
+		$(NSINSTALL) -D $(RELEASE_LIBS_DEST);\
 	else \
 		true; \
 	fi
-	cp $(RELEASE_LIBS) $(RELEASE_LIB_DIR)
+	cp $(RELEASE_LIBS) $(RELEASE_LIBS_DEST)
 endif
 ifdef RELEASE_HEADERS
 	@echo "Copying header files to release directory"
@@ -274,7 +287,7 @@ $(NFSPWD):
 
 $(PROGRAM): $(OBJS)
 	@$(MAKE_OBJDIR)
-ifeq ($(OS_ARCH),WINNT)
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
 	$(CC) $(OBJS) -Fe$@ -link $(LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS)
 else
 ifeq ($(MOZ_OS2_TOOLS),VACPP)
@@ -298,11 +311,12 @@ endif
 	$(RANLIB) $@
 
 ifeq ($(OS_TARGET), OS2)
-$(IMPORT_LIBRARY): $(SHARED_LIBRARY)
-	$(IMPLIB) $@ $(SHARED_LIBRARY).def
+$(IMPORT_LIBRARY): $(MAPFILE)
+	rm -f $@
+	$(IMPLIB) $@ $(MAPFILE)
 endif
-    
-$(SHARED_LIBRARY): $(OBJS)
+
+$(SHARED_LIBRARY): $(OBJS) $(MAPFILE)
 	@$(MAKE_OBJDIR)
 	rm -f $@
 ifeq ($(OS_ARCH)$(OS_RELEASE), AIX4.1)
@@ -314,29 +328,22 @@ ifeq ($(OS_ARCH)$(OS_RELEASE), AIX4.1)
 	$(LD) $(XCFLAGS) -o $@ $(OBJS) -bE:$(OBJDIR)/lib$(LIBRARY_NAME)_syms \
 		-bM:SRE -bnoentry $(OS_LIBS) $(EXTRA_LIBS)
 else	# AIX 4.1
-ifeq ($(OS_ARCH), WINNT)
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
 	$(LINK_DLL) -MAP $(DLLBASE) $(DLL_LIBS) $(EXTRA_LIBS) $(OBJS)
 else
-ifeq ($(OS_ARCH),OS2)
-# append ( >> ) doesn't seem to be working under OS/2 gmake. Run through OS/2 shell instead.	
-	@cmd /C "echo LIBRARY $(notdir $(basename $(SHARED_LIBRARY))) INITINSTANCE TERMINSTANCE >$@.def"
-	@cmd /C "echo PROTMODE >>$@.def"
-	@cmd /C "echo CODE    LOADONCALL MOVEABLE DISCARDABLE >>$@.def"
-	@cmd /C "echo DATA    PRELOAD MOVEABLE MULTIPLE NONSHARED >>$@.def"	
-	@cmd /C "echo EXPORTS >>$@.def"
-	@cmd /C "$(FILTER) $(LIBRARY) | grep -v _DLL_InitTerm >>$@.def"
-	$(LINK_DLL) $(DLLBASE) $(OBJS) $(OS_LIBS) $(EXTRA_LIBS) $@.def
-else	# OS2
+ifeq ($(MOZ_OS2_TOOLS),VACPP)
+	$(LINK_DLL) $(DLLBASE) $(OBJS) $(OS_LIBS) $(EXTRA_LIBS) $(MAPFILE)
+else	# !os2 vacpp
 ifeq ($(OS_TARGET), OpenVMS)
-	@if test ! -f $(OBJDIR)/VMSuni.opt; then \
-	    echo "Creating universal symbol option file $(OBJDIR)/VMSuni.opt";\
-	    create_opt_uni $(OBJS); \
+	@if test ! -f $(VMS_SYMVEC_FILE); then \
+	  if test -f $(VMS_SYMVEC_FILE_MODULE); then \
+	    echo Creating component options file $(VMS_SYMVEC_FILE); \
+	    cp $(VMS_SYMVEC_FILE_MODULE) $(VMS_SYMVEC_FILE); \
+	  fi; \
 	fi
-	$(MKSHLIB) -o $@ $(OBJS) $(EXTRA_LIBS) $(OBJDIR)/VMSuni.opt
-else	# OpenVMS
-	$(MKSHLIB) $(OBJS) $(EXTRA_LIBS)
 endif	# OpenVMS
-endif   # OS2
+	$(MKSHLIB) $(OBJS) $(EXTRA_LIBS)
+endif   # OS2 vacpp
 endif	# WINNT
 endif	# AIX 4.1
 ifdef ENABLE_STRIP
@@ -350,20 +357,64 @@ ifeq ($(OS_TARGET),OS2)
 	$(RC) -DOS2 -r $< $@
 else
 # The resource compiler does not understand the -U option.
-	$(RC) $(filter-out -U%,$(DEFINES)) $(INCLUDES) -Fo$@ $<
+ifdef NS_USE_GCC
+	$(RC) $(RCFLAGS) $(filter-out -U%,$(DEFINES)) $(INCLUDES:-I%=--include-dir %) -o $@ $<
+else
+	$(RC) $(RCFLAGS) $(filter-out -U%,$(DEFINES)) $(INCLUDES) -Fo$@ $<
+endif # GCC
 endif
 	@echo $(RES) finished
 endif
 
+$(MAPFILE): $(LIBRARY_NAME).def
+	@$(MAKE_OBJDIR)
+ifeq ($(OS_ARCH),SunOS)
+	grep -v ';-' $< | \
+	sed -e 's,;+,,' -e 's; DATA ;;' -e 's,;;,,' -e 's,;.*,;,' > $@
+endif
+ifeq ($(OS_ARCH),OS2)
+	echo LIBRARY $(LIBRARY_NAME)$(LIBRARY_VERSION) INITINSTANCE TERMINSTANCE > $@
+	echo PROTMODE >> $@
+	echo CODE    LOADONCALL MOVEABLE DISCARDABLE >> $@
+	echo DATA    PRELOAD MOVEABLE MULTIPLE NONSHARED >> $@
+	echo EXPORTS >> $@
+	grep -v ';+' $< | grep -v ';-' | \
+	sed -e 's; DATA ;;' -e 's,;;,,' -e 's,;.*,,' -e 's,\([\t ]*\),\1_,' | \
+	awk 'BEGIN {ord=1;} { print($$0 " @" ord " RESIDENTNAME"); ord++;}'	>> $@
+	$(ADD_TO_DEF_FILE)
+endif
+
+#
+# Translate source filenames to absolute paths. This is required for
+# debuggers under Windows and OS/2 to find source files automatically.
+#
+
+ifeq ($(OS_ARCH),OS2)
+NEED_ABSOLUTE_PATH = 1
+endif
+
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
+NEED_ABSOLUTE_PATH = 1
+endif
+
+ifdef NEED_ABSOLUTE_PATH
+PWD := $(shell pwd)
+abspath = $(if $(findstring :,$(1)),$(1),$(if $(filter /%,$(1)),$(1),$(PWD)/$(1)))
+endif
+
 $(OBJDIR)/%.$(OBJ_SUFFIX): %.cpp
 	@$(MAKE_OBJDIR)
-ifeq ($(OS_ARCH), WINNT)
-	$(CCC) -Fo$@ -c $(CCCFLAGS) $<
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
+	$(CCC) -Fo$@ -c $(CCCFLAGS) $(call abspath,$<)
 else
 ifeq ($(MOZ_OS2_TOOLS),VACPP)
-	$(CCC) -Fo$@ -c $(CCCFLAGS) $<
+	$(CCC) -Fo$@ -c $(CCCFLAGS) $(call abspath,$<)
+else
+ifdef NEED_ABSOLUTE_PATH
+	$(CCC) -o $@ -c $(CCCFLAGS) $(call abspath,$<)
 else
 	$(CCC) -o $@ -c $(CCCFLAGS) $<
+endif
 endif
 endif
 
@@ -372,13 +423,17 @@ WCCFLAGS2 = $(subst -I,-i=,$(WCCFLAGS1))
 WCCFLAGS3 = $(subst -D,-d,$(WCCFLAGS2))
 $(OBJDIR)/%.$(OBJ_SUFFIX): %.c
 	@$(MAKE_OBJDIR)
-ifeq ($(OS_ARCH), WINNT)
-	$(CC) -Fo$@ -c $(CFLAGS) $<
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
+	$(CC) -Fo$@ -c $(CFLAGS) $(call abspath,$<)
 else
 ifeq ($(MOZ_OS2_TOOLS),VACPP)
-	$(CC) -Fo$@ -c $(CFLAGS) $<
+	$(CC) -Fo$@ -c $(CFLAGS) $(call abspath,$<)
+else
+ifdef NEED_ABSOLUTE_PATH
+	$(CC) -o $@ -c $(CFLAGS) $(call abspath,$<)
 else
 	$(CC) -o $@ -c $(CFLAGS) $<
+endif
 endif
 endif
 

@@ -106,6 +106,14 @@ _PR_MD_INIT_THREAD(PRThread *thread)
 		return PR_SUCCESS;
 }
 
+static unsigned __stdcall
+pr_root(void *arg)
+{
+    PRThread *thread = (PRThread *)arg;
+    thread->md.start(thread);
+    return 0;
+}
+
 PRStatus 
 _PR_MD_CREATE_THREAD(PRThread *thread, 
                   void (*start)(void *), 
@@ -115,14 +123,11 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
                   PRUint32 stackSize)
 {
 
+    thread->md.start = start;
     thread->md.handle = (HANDLE) _beginthreadex(
                     NULL,
                     thread->stack->stackSize,
-#if defined(__MINGW32__)
-                    (void *)start,
-#else
-                    (unsigned (__stdcall *)(void *))start,
-#endif
+                    pr_root,
                     (void *)thread,
                     CREATE_SUSPENDED,
                     &(thread->id));
@@ -131,7 +136,13 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
     }
 
     thread->md.id = thread->id;
-    _PR_MD_SET_PRIORITY(&(thread->md), priority);
+    /*
+     * On windows, a thread is created with a thread priority of
+     * THREAD_PRIORITY_NORMAL.
+     */
+    if (priority != PR_PRIORITY_NORMAL) {
+        _PR_MD_SET_PRIORITY(&(thread->md), priority);
+    }
 
     /* Activate the thread */
     if ( ResumeThread( thread->md.handle ) != -1)
