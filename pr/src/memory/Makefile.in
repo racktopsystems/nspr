@@ -15,35 +15,33 @@
 # Reserved.
 #
 
-#
-# Config stuff for NEC Mips SYSV
-#
+#! gmake
 
-include $(MOD_DEPTH)/config/UNIX.mk
+MOD_DEPTH = ../../..
+topsrcdir	= @top_srcdir@/nsprpub
+VPATH		= @srcdir@
+srcdir		= @srcdir@
 
-CPU_ARCH		= mips
+include $(MOD_DEPTH)/config/autoconf.mk
 
-ifdef NS_USE_GCC
-CC			= gcc
-CCC			= g++
-else
-CC			= $(NSDEPTH)/build/hcc -Xa -KGnum=0 -KOlimit=4000
-CCC			= g++
+include $(topsrcdir)/config/config.mk
+
+# Disable optimization of the nspr on SunOS4.1.3
+ifeq ($(OS_ARCH),SunOS)
+ifeq ($(OS_RELEASE),4.1.3_U1)
+OPTIMIZER =
+endif
 endif
 
-MKSHLIB			= $(LD) $(DSO_LDOPTS)
+CSRCS = prseg.c
 
-RANLIB			= /bin/true
+TARGETS	= $(OBJS)
 
-DEFINES			+= -D_PR_LOCAL_THREADS_ONLY
-ifdef USE_AUTOCONF
-OS_CFLAGS		=
-else
-OS_CFLAGS		= $(ODD_CFLAGS) -DSVR4 -D__SVR4 -DNEC -Dnec_ews -DHAVE_STRERROR
-endif
-OS_LIBS			= -lsocket -lnsl -ldl $(LDOPTIONS)
-LDOPTIONS		= -lc -L/usr/ucblib -lucb
+INCLUDES = -I$(DIST)/include/private -I$(DIST)/include
 
-NOSUCHFILE		= /no-such-file
+include $(topsrcdir)/config/rules.mk
 
-DSO_LDOPTS		= -G
+export:: $(TARGETS)
+
+install:: export
+
