@@ -70,6 +70,7 @@
 unsigned char GarbageCollectorCacheFlusher(PRUint32 size);
 
 extern PRThread *gPrimaryThread;
+extern ProcessSerialNumber gApplicationProcess;     // in macthr.c
 
 
 //##############################################################################
@@ -288,7 +289,10 @@ void _MD_EarlyInit()
 {
 	Handle				environmentVariables;
 
+	GetCurrentProcess(&gApplicationProcess);
+
 	INIT_CRITICAL_REGION();
+	InitIdleSemaphore();
 
 #if !defined(MAC_NSPR_STANDALONE)
 	// MacintoshInitializeMemory();  Moved to mdmacmem.c: AllocateRawMemory(Size blockSize)
@@ -376,6 +380,7 @@ void CleanupTermProc(void)
 	_MD_StopInterrupts();	// deactive Time Manager task
 
 	CLOSE_OPEN_TRANSPORT();
+	TermIdleSemaphore();
 	TERM_CRITICAL_REGION();
 	
 	__NSTerminate();

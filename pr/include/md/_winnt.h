@@ -47,6 +47,9 @@
 
 #include <windows.h>
 #include <winsock.h>
+#ifdef __MINGW32__
+#include <mswsock.h>
+#endif
 #include <errno.h>
 
 #include "prio.h"
@@ -346,6 +349,8 @@ extern int _PR_NTFiberSafeSelect(int, fd_set *, fd_set *, fd_set *,
 #define _MD_INIT_THREAD             _PR_MD_INIT_THREAD
 #define _MD_INIT_ATTACHED_THREAD    _PR_MD_INIT_THREAD
 #define _MD_CREATE_THREAD           _PR_MD_CREATE_THREAD
+#define _MD_JOIN_THREAD             _PR_MD_JOIN_THREAD
+#define _MD_END_THREAD              _PR_MD_END_THREAD
 #define _MD_YIELD                   _PR_MD_YIELD
 #define _MD_SET_PRIORITY            _PR_MD_SET_PRIORITY
 #define _MD_CLEAN_THREAD            _PR_MD_CLEAN_THREAD
@@ -448,6 +453,9 @@ extern PRStatus _PR_KillWindowsProcess(struct PRProcess *process);
 #define _MD_INTERVAL_PER_SEC              _PR_MD_INTERVAL_PER_SEC
 #define _MD_INTERVAL_PER_MILLISEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000)
 #define _MD_INTERVAL_PER_MICROSEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000000)
+
+/* --- Time --- */
+extern void _PR_FileTimeToPRTime(const FILETIME *filetime, PRTime *prtm);
 
 /* --- Native-Thread Specific Definitions ------------------------------- */
 

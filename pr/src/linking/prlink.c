@@ -17,7 +17,7 @@
  * Copyright (C) 1998-2000 Netscape Communications Corporation.  All
  * Rights Reserved.
  * 
- * Contributor(s):
+ * Contributor(s): Steve Streeter (Hewlett-Packard Company)
  * 
  * Alternatively, the contents of this file may be used under the
  * terms of the GNU General Public License Version 2 or later (the
@@ -40,21 +40,26 @@
 #include <image.h>
 #endif
 
-#ifdef XP_MAC
+#if defined(XP_MAC) || defined(XP_MACOSX)
 #include <CodeFragments.h>
 #include <TextUtils.h>
 #include <Types.h>
-#include <Strings.h>
 #include <Aliases.h>
 
 #if TARGET_CARBON
 #include <CFURL.h>
 #include <CFBundle.h>
 #include <CFString.h>
+#include <CFDictionary.h>
+#include <CFData.h>
 #endif
 
+#if defined(XP_MACOSX)
+#define PStrFromCStr(src, dst) c2pstrcpy(dst, src)
+#else
 #include "macdll.h"
 #include "mdmac.h"
+#endif /* XP_MACOSX */
 #endif
 
 #ifdef XP_UNIX
@@ -72,6 +77,13 @@
 #endif
 #ifndef RTLD_LOCAL
 #define RTLD_LOCAL 0
+#endif
+#ifdef AIX
+#include <sys/ldr.h>
+#endif
+#ifdef OSF1
+#include <loader.h>
+#include <rld_interface.h>
 #endif
 #elif defined(USE_HPSHL)
 #include <dl.h>
@@ -111,14 +123,18 @@ struct PRLibrary {
 #endif
 #endif
 
-#ifdef XP_MAC
-    CFragConnectionID           dlh;
+#if defined(XP_MAC) || defined(XP_MACOSX)
+    CFragConnectionID           connection;
 
 #if TARGET_CARBON
     CFBundleRef                 bundle;
 #endif
 
     Ptr                         main;
+
+#if defined(XP_MACOSX)
+    CFMutableDictionaryRef      wrappers;
+#endif /* XP_MACOSX */
 #endif
 
 #ifdef XP_UNIX
@@ -262,6 +278,10 @@ void _PR_InitLinker(void)
 }
 
 #if defined(WIN16)
+/*
+ * _PR_ShutdownLinker unloads all dlls loaded by the application via
+ * calls to PR_LoadLibrary
+ */
 void _PR_ShutdownLinker(void)
 {
     PR_EnterMonitor(pr_linker_lock);
@@ -282,6 +302,32 @@ void _PR_ShutdownLinker(void)
     PR_DestroyMonitor(pr_linker_lock);
     pr_linker_lock = NULL;
 }
+#else
+/*
+ * _PR_ShutdownLinker was originally only used on WIN16 (see above),
+ * but I think it should also be used on other platforms.  However,
+ * I disagree with the original implementation's unloading the dlls
+ * for the application.  Any dlls that still remain on the pr_loadmap
+ * list when NSPR shuts down are application programming errors.  The
+ * only exception is pr_exe_loadmap, which was added to the list by
+ * NSPR and hence should be cleaned up by NSPR.
+ */
+void _PR_ShutdownLinker(void)
+{
+    /* FIXME: pr_exe_loadmap should be destroyed. */
+    
+    PR_DestroyMonitor(pr_linker_lock);
+    pr_linker_lock = NULL;
+
+    if (_pr_currentLibPath) {
+        free(_pr_currentLibPath);
+        _pr_currentLibPath = NULL;
+    }
+
+#if !defined(USE_DLFCN) && !defined(HAVE_STRERROR)
+    PR_DELETE(errStrBuf);
+#endif
+}
 #endif
 
 /******************************************************************************/
@@ -292,7 +338,9 @@ PR_IMPLEMENT(PRStatus) PR_SetLibraryPath(const char *path)
 
     if (!_pr_initialized) _PR_ImplicitInitialization();
     PR_EnterMonitor(pr_linker_lock);
-    PR_FREEIF(_pr_currentLibPath);
+    if (_pr_currentLibPath) {
+        free(_pr_currentLibPath);
+    }
     if (path) {
         _pr_currentLibPath = strdup(path);
         if (!_pr_currentLibPath) {
@@ -310,7 +358,7 @@ PR_IMPLEMENT(PRStatus) PR_SetLibraryPath(const char *path)
 ** Return the library path for finding shared libraries.
 */
 PR_IMPLEMENT(char *) 
-PR_GetLibraryPath()
+PR_GetLibraryPath(void)
 {
     char *ev;
     char *copy = NULL;  /* a copy of _pr_currentLibPath */
@@ -342,7 +390,7 @@ PR_GetLibraryPath()
         ev = "";
     
     len = strlen(ev) + 1;        /* +1 for the null */
-    p = (char*) PR_MALLOC(len);
+    p = (char*) malloc(len);
     if (p) {
         strcpy(p, ev);
     }
@@ -369,7 +417,7 @@ PR_GetLibraryPath()
 #endif
     len = strlen(ev) + 1;        /* +1 for the null */
 
-    p = (char*) PR_MALLOC(len);
+    p = (char*) malloc(len);
     if (p) {
         strcpy(p, ev);
     }   /* if (p)  */
@@ -410,20 +458,40 @@ PR_GetLibraryName(const char *path, const char *lib)
 #ifdef XP_PC
     if (strstr(lib, PR_DLL_SUFFIX) == NULL)
     {
-        fullname = PR_smprintf("%s\\%s%s", path, lib, PR_DLL_SUFFIX);
+        if (path) {
+            fullname = PR_smprintf("%s\\%s%s", path, lib, PR_DLL_SUFFIX);
+        } else {
+            fullname = PR_smprintf("%s%s", lib, PR_DLL_SUFFIX);
+        }
     } else {
-        fullname = PR_smprintf("%s\\%s", path, lib);
+        if (path) {
+            fullname = PR_smprintf("%s\\%s", path, lib);
+        } else {
+            fullname = PR_smprintf("%s", lib);
+        }
     }
 #endif /* XP_PC */
 #ifdef XP_MAC
-    fullname = PR_smprintf("%s%s", path, lib);
+    if (path) {
+        fullname = PR_smprintf("%s%s", path, lib);
+    } else {
+        fullname = PR_smprintf("%s", lib);
+    }
 #endif
 #if defined(XP_UNIX) || defined(XP_BEOS)
     if (strstr(lib, PR_DLL_SUFFIX) == NULL)
     {
-        fullname = PR_smprintf("%s/lib%s%s", path, lib, PR_DLL_SUFFIX);
+        if (path) {
+            fullname = PR_smprintf("%s/lib%s%s", path, lib, PR_DLL_SUFFIX);
+        } else {
+            fullname = PR_smprintf("lib%s%s", lib, PR_DLL_SUFFIX);
+        }
     } else {
-        fullname = PR_smprintf("%s/%s", path, lib);
+        if (path) {
+            fullname = PR_smprintf("%s/%s", path, lib);
+        } else {
+            fullname = PR_smprintf("%s", lib);
+        }
     }
 #endif /* XP_UNIX || XP_BEOS */
     return fullname;
@@ -501,36 +569,257 @@ PR_LoadLibrary(const char *name)
     return PR_LoadLibraryWithFlags(libSpec, 0);
 }
 
-#if TARGET_CARBON
-
-/*
-** Returns a CFBundleRef if the FSSpec refers to a Mac OS X bundle directory.
-** The caller is responsible for calling CFRelease() to deallocate.
-*/
-static CFBundleRef getLibraryBundle(const FSSpec* spec)
+#if defined(USE_MACH_DYLD)
+static NSModule
+pr_LoadMachDyldModule(const char *name)
 {
-    CFBundleRef bundle = NULL;
-    FSRef ref;
-    OSErr err = FSpMakeFSRef(spec, &ref);
-    char path[512];
-    if (err == noErr && ((UInt32)(FSRefMakePath) != kUnresolvedCFragSymbolAddress)) {
-        err = FSRefMakePath(&ref, (UInt8*)path, sizeof(path) - 1);
-        if (err == noErr) {
-            CFStringRef pathRef = CFStringCreateWithCString(NULL, path, kCFStringEncodingUTF8);
-            if (pathRef) {
-            	CFURLRef bundleURL = CFURLCreateWithFileSystemPath(NULL, pathRef, kCFURLPOSIXPathStyle, true);
-            	if (bundleURL != NULL) {
-                    bundle = CFBundleCreate(NULL, bundleURL);
-                    CFRelease(bundleURL);
-            	}
-            	CFRelease(pathRef);
+    NSObjectFileImage ofi;
+    NSModule h = NULL;
+    if (NSCreateObjectFileImageFromFile(name, &ofi)
+            == NSObjectFileImageSuccess) {
+        h = NSLinkModule(ofi, name, NSLINKMODULE_OPTION_PRIVATE);
+    }
+    return h;
+}
+#endif
+
+#if defined(XP_MAC) || defined(XP_MACOSX)
+
+#ifdef XP_MACOSX
+static void* TV2FP(CFMutableDictionaryRef dict, const char* name, void *tvp)
+{
+    static uint32 glue[6] = { 0x3D800000, 0x618C0000, 0x800C0000, 0x804C0004, 0x7C0903A6, 0x4E800420 };
+    uint32* newGlue = NULL;
+
+    if (tvp != NULL) {
+        CFStringRef nameRef = CFStringCreateWithCString(NULL, name, kCFStringEncodingASCII);
+        if (nameRef) {
+            CFMutableDataRef glueData = (CFMutableDataRef) CFDictionaryGetValue(dict, nameRef);
+            if (glueData == NULL) {
+                glueData = CFDataCreateMutable(NULL, sizeof(glue));
+                if (glueData != NULL) {
+                    newGlue = (uint32*) CFDataGetMutableBytePtr(glueData);
+                    memcpy(newGlue, glue, sizeof(glue));
+                    newGlue[0] |= ((UInt32)tvp >> 16);
+                    newGlue[1] |= ((UInt32)tvp & 0xFFFF);
+                    MakeDataExecutable(newGlue, sizeof(glue));
+                    CFDictionaryAddValue(dict, nameRef, glueData);
+                    CFRelease(glueData);
+
+                    PR_LOG(_pr_linker_lm, PR_LOG_MIN, ("TV2FP: created wrapper for CFM function %s().", name));
+                }
+            } else {
+                PR_LOG(_pr_linker_lm, PR_LOG_MIN, ("TV2FP: found wrapper for CFM function %s().", name));
+
+                newGlue = (uint32*) CFDataGetMutableBytePtr(glueData);
             }
+            CFRelease(nameRef);
         }
     }
-    return bundle;
+    
+    return newGlue;
+}
+#endif
+
+/*
+** macLibraryLoadProc is a function definition for a Mac shared library
+** loading method. The "name" param is the same full or partial pathname
+** that was passed to pr_LoadLibraryByPathName. The function must fill
+** in the fields of "lm" which apply to its library type. Returns
+** PR_SUCCESS if successful.
+*/
+
+typedef PRStatus (*macLibraryLoadProc)(const char *name, PRLibrary *lm);
+
+static PRStatus
+pr_LoadViaCFM(const char *name, PRLibrary *lm)
+{
+    OSErr err;
+    char cName[64];
+    Str255 errName;
+    
+#if !defined(XP_MACOSX)
+    Str255 pName;
+    /*
+     * Algorithm: The "name" passed in could be either a shared
+     * library name that we should look for in the normal library
+     * search paths, or a full path name to a specific library on
+     * disk.  Since the full path will always contain a ":"
+     * (shortest possible path is "Volume:File"), and since a
+     * library name can not contain a ":", we can test for the
+     * presence of a ":" to see which type of library we should load.
+     * or its a full UNIX path which we for now assume is Java
+     * enumerating all the paths (see below)
+     */
+    if (strchr(name, PR_PATH_SEPARATOR) == NULL) {
+        if (strchr(name, PR_DIRECTORY_SEPARATOR) == NULL) {
+            /*
+             * The name did not contain a ":", so it must be a
+             * library name.  Convert the name to a Pascal string
+             * and try to find the library.
+             */
+        } else {
+            /*
+             * name contained a "/" which means we need to suck off
+             * the last part of the path and pass that on the
+             * NSGetSharedLibrary. this may not be what we really
+             * want to do .. because Java could be iterating through
+             * the whole LD path, and we'll find it if it's anywhere
+             * on that path -- it appears that's what UNIX and the
+             * PC do too...so we'll emulate but it could be wrong.
+             */
+            name = strrchr(name, PR_DIRECTORY_SEPARATOR) + 1;
+        }
+
+        PStrFromCStr(name, pName);
+
+        /*
+         * beard: NSGetSharedLibrary was so broken that I just decided to
+         * use GetSharedLibrary for now.  This will need to change for
+         * plugins, but those should go in the Extensions folder anyhow.
+         */
+        err = GetSharedLibrary(pName, kCompiledCFragArch, kReferenceCFrag,
+                               &lm->connection, &lm->main, errName);
+        if (err != noErr)
+            return PR_FAILURE;
+    }
+    else
+#endif
+    {
+        /*
+         * The name did contain a ":", so it must be a full path name.
+         * Now we have to do a lot of work to convert the path name to
+         * an FSSpec (silly, since we were probably just called from the
+         * MacFE plug-in code that already knew the FSSpec and converted
+         * it to a full path just to pass to us).  Make an FSSpec from
+         * the full path and call GetDiskFragment.
+         */
+        FSSpec fileSpec;
+        Boolean tempUnusedBool;
+
+#if defined(XP_MACOSX)
+        {
+            /* Use direct conversion of POSIX path to FSRef to FSSpec. */
+            FSRef ref;
+            err = FSPathMakeRef((const UInt8*)name, &ref, NULL);
+            if (err == noErr)
+                err = FSGetCatalogInfo(&ref, kFSCatInfoNone, NULL, NULL,
+                                       &fileSpec, NULL);
+        }
+#else
+        PStrFromCStr(name, pName);
+        err = FSMakeFSSpec(0, 0, pName, &fileSpec);
+#endif
+        if (err != noErr)
+            return PR_FAILURE;
+
+        /* Resolve an alias if this was one */
+        err = ResolveAliasFile(&fileSpec, true, &tempUnusedBool,
+                               &tempUnusedBool);
+        if (err != noErr)
+            return PR_FAILURE;
+
+        /* Finally, try to load the library */
+        err = GetDiskFragment(&fileSpec, 0, kCFragGoesToEOF, fileSpec.name,
+                              kLoadCFrag, &lm->connection, &lm->main, errName);
+
+#if TARGET_CARBON
+        p2cstrcpy(cName, fileSpec.name);
+#else
+        memcpy(cName, fileSpec.name + 1, fileSpec.name[0]);
+        cName[fileSpec.name[0]] = '\0';
+#endif
+
+#ifdef XP_MACOSX
+        if (err == noErr && lm->connection) {
+            /*
+             * if we're a mach-o binary, need to wrap all CFM function
+             * pointers. need a hash-table of already seen function
+             * pointers, etc.
+             */
+            lm->wrappers = CFDictionaryCreateMutable(NULL, 16,
+                           &kCFTypeDictionaryKeyCallBacks,
+                           &kCFTypeDictionaryValueCallBacks);
+            if (lm->wrappers) {
+                lm->main = TV2FP(lm->wrappers, "main", lm->main);
+            } else
+                err = memFullErr;
+        }
+#endif
+    }
+    return (err == noErr) ? PR_SUCCESS : PR_FAILURE;
 }
 
+/*
+** Creates a CFBundleRef if the pathname refers to a Mac OS X bundle
+** directory. The caller is responsible for calling CFRelease() to
+** deallocate.
+*/
+
+#if TARGET_CARBON
+static PRStatus
+pr_LoadCFBundle(const char *name, PRLibrary *lm)
+{
+    CFURLRef bundleURL;
+    CFBundleRef bundle = NULL;
+    
+#ifdef XP_MACOSX
+    char pathBuf[PATH_MAX];
+    const char *resolvedPath;
+    CFStringRef pathRef;
+
+    /* Takes care of relative paths and symlinks */
+    resolvedPath = realpath(name, pathBuf);
+    if (!resolvedPath)
+        return PR_FAILURE;
+        
+    pathRef = CFStringCreateWithCString(NULL, pathBuf, kCFStringEncodingUTF8);
+    if (pathRef) {
+        bundleURL = CFURLCreateWithFileSystemPath(NULL, pathRef,
+                                                  kCFURLPOSIXPathStyle, true);
+        if (bundleURL) {
+            bundle = CFBundleCreate(NULL, bundleURL);
+            CFRelease(bundleURL);
+        }
+        CFRelease(pathRef);
+    }
+#else
+    OSErr err;
+    Str255 pName;
+    FSSpec fsSpec;
+    FSRef fsRef;
+
+    if ((UInt32)(CFURLCreateFromFSRef) == kUnresolvedCFragSymbolAddress)
+        return PR_FAILURE;
+    PStrFromCStr(name, pName);
+    err = FSMakeFSSpec(0, 0, pName, &fsSpec);
+    if (err != noErr)
+        return PR_FAILURE;
+    err = FSpMakeFSRef(&fsSpec, &fsRef);
+    if (err != noErr)
+        return PR_FAILURE;
+    bundleURL = CFURLCreateFromFSRef(NULL, &fsRef);
+    if (bundleURL) {
+        bundle = CFBundleCreate(NULL, bundleURL);
+        CFRelease(bundleURL);
+    }
 #endif
+
+    lm->bundle = bundle;
+    return (bundle != NULL) ? PR_SUCCESS : PR_FAILURE;
+}
+#endif
+
+#ifdef XP_MACOSX
+static PRStatus
+pr_LoadViaDyld(const char *name, PRLibrary *lm)
+{
+    lm->dlh = pr_LoadMachDyldModule(name);
+    return (lm->dlh != NULL) ? PR_SUCCESS : PR_FAILURE;
+}
+#endif
+
+#endif /* defined(XP_MAC) || defined(XP_MACOSX) */
 
 /*
 ** Dynamically load a library. Only load libraries once, so scan the load
@@ -594,157 +883,48 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
     lm->next = pr_loadmap;
     pr_loadmap = lm;
 
-        /*
-        ** Try to load a table of "static functions" provided by the DLL
-        */
+    /*
+    ** Try to load a table of "static functions" provided by the DLL
+    */
 
-        pfn = (NODL_PROC *)GetProcAddress(h, "NODL_TABLE");
-        if (pfn != NULL) {
-            lm->staticTable = (*pfn)();
-        }
+    pfn = (NODL_PROC *)GetProcAddress(h, "NODL_TABLE");
+    if (pfn != NULL) {
+        lm->staticTable = (*pfn)();
+    }
     }
 #endif /* WIN32 || WIN16 */
 
-#if defined(XP_MAC) && TARGET_RT_MAC_CFM
+#if defined(XP_MAC) || defined(XP_MACOSX)
     {
-    OSErr                 err;
-    CFragConnectionID     connectionID;
-    Str255                errName;
-    Str255                pName;
-    char                  cName[64];
-    const char*           libName;
-        
-    /*
-     * Algorithm: The "name" passed in could be either a shared
-     * library name that we should look for in the normal library
-     * search paths, or a full path name to a specific library on
-     * disk.  Since the full path will always contain a ":"
-     * (shortest possible path is "Volume:File"), and since a
-     * library name can not contain a ":", we can test for the
-     * presence of a ":" to see which type of library we should load.
-     * or its a full UNIX path which we for now assume is Java
-     * enumerating all the paths (see below)
-     */
-    if (strchr(name, PR_PATH_SEPARATOR) == NULL)
-    {
-        if (strchr(name, PR_DIRECTORY_SEPARATOR) == NULL)
-        {
-        /*
-         * The name did not contain a ":", so it must be a
-         * library name.  Convert the name to a Pascal string
-         * and try to find the library.
-         */
-        }
-        else
-        {
-            /* name contained a "/" which means we need to suck off the last part */
-            /* of the path and pass that on the NSGetSharedLibrary */
-            /* this may not be what we really want to do .. because Java could */
-            /* be iterating through the whole LD path, and we'll find it if it's */
-            /* anywhere on that path -- it appears that's what UNIX and the PC do */
-            /* too...so we'll emulate but it could be wrong. */
-            name = strrchr(name, PR_DIRECTORY_SEPARATOR) + 1;
-        }
-        
-        PStrFromCStr(name, pName);
-    
-        /*
-         * beard: NSGetSharedLibrary was so broken that I just decided to
-         * use GetSharedLibrary for now.  This will need to change for
-         * plugins, but those should go in the Extensions folder anyhow.
-         */
-#if 0
-        err = NSGetSharedLibrary(pName, &connectionID, &lm->main);
+    int     i;
+    PRStatus status;
+
+    static const macLibraryLoadProc loadProcs[] = {
+#if defined(XP_MACOSX)
+        pr_LoadViaDyld, pr_LoadCFBundle, pr_LoadViaCFM
+#elif TARGET_CARBON
+        pr_LoadViaCFM, pr_LoadCFBundle
 #else
-        err = GetSharedLibrary(pName, kCompiledCFragArch, kReferenceCFrag,
-                &connectionID, &lm->main, errName);
+        pr_LoadViaCFM
 #endif
-        if (err != noErr)
-        {
-            oserr = err;
-            PR_DELETE(lm);
-            goto unlock;    
-        }
-        
-        libName = name;
+    };
+
+    for (i = 0; i < sizeof(loadProcs) / sizeof(loadProcs[0]); i++) {
+        if ((status = loadProcs[i](name, lm)) == PR_SUCCESS)
+            break;
     }
-    else    
-    {
-        /*
-         * The name did contain a ":", so it must be a full path name.
-         * Now we have to do a lot of work to convert the path name to
-         * an FSSpec (silly, since we were probably just called from the
-         * MacFE plug-in code that already knew the FSSpec and converted
-         * it to a full path just to pass to us).  First we copy out the
-         * volume name (the text leading up to the first ":"); then we
-         * separate the file name (the text following the last ":") from
-         * rest of the path.  After converting the strings to Pascal
-         * format we can call GetCatInfo to get the parent directory ID
-         * of the file, and then (finally) make an FSSpec and call
-         * GetDiskFragment.
-         */
-        FSSpec fileSpec;
-        Boolean tempUnusedBool;
-
-        PStrFromCStr(name, pName);
-        err = FSMakeFSSpec(0, 0, pName, &fileSpec);
-        if (err != noErr) {
-            oserr = _MD_ERRNO();
-            PR_DELETE(lm);
-            goto unlock;
-        }
-
-        /* Resolve an alias if this was one */
-        err = ResolveAliasFile(&fileSpec, true, &tempUnusedBool, &tempUnusedBool);
-        if (err != noErr)
-        {
-            oserr = err;
-            PR_DELETE(lm);
-            goto unlock;
-        }
-
-        /* Finally, try to load the library */
-        err = GetDiskFragment(&fileSpec, 0, kCFragGoesToEOF, fileSpec.name, 
-                              kLoadCFrag, &connectionID, &lm->main, errName);
-
-        memcpy(cName, fileSpec.name + 1, fileSpec.name[0]);
-        cName[fileSpec.name[0]] = '\0';
-        libName = cName;
-        
-        if (err != noErr)
-        {
-#if TARGET_CARBON
-            /* If not a CFM library, perhaps it's a CFBundle. */
-            lm->bundle = getLibraryBundle(&fileSpec);
-#ifdef DEBUG
-            fprintf(stderr, "*** loading bundle for library '%s' [%s]. ***\n",
-                    libName, lm->bundle ? "SUCCEEDED" : "FAILED");
-#endif
-            if (lm->bundle == NULL) {
-                oserr = err;
-                PR_DELETE(lm);
-                goto unlock;
-            }
-#else
-            oserr = err;
-            PR_DELETE(lm);
-            goto unlock;
-#endif
-        }
+    if (status != PR_SUCCESS) {
+        oserr = cfragNoLibraryErr;
+        PR_DELETE(lm);
+        goto unlock;        
     }
-    
-    lm->name = strdup(libName);
-    lm->dlh = connectionID;
+    lm->name = strdup(name);
     lm->next = pr_loadmap;
     pr_loadmap = lm;
     }
-#elif defined(XP_MAC) && !TARGET_RT_MAC_CFM
-    {
-
-    }
 #endif
 
-#ifdef XP_UNIX
+#if defined(XP_UNIX) && !defined(XP_MACOSX)
 #ifdef HAVE_DLL
     {
 #if defined(USE_DLFCN)
@@ -790,12 +970,7 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
     /* No equivalent of PR_LD_GLOBAL and PR_LD_LOCAL. */
     h = shl_load(name, shl_flags, 0L);
 #elif defined(USE_MACH_DYLD)
-    NSObjectFileImage ofi;
-    NSModule h = NULL;
-    if (NSCreateObjectFileImageFromFile(name, &ofi)
-            == NSObjectFileImageSuccess) {
-        h = NSLinkModule(ofi, name, NSLINKMODULE_OPTION_PRIVATE);
-    }
+    NSModule h = pr_LoadMachDyldModule(name);
 #else
 #error Configuration error
 #endif
@@ -971,7 +1146,7 @@ pr_Mac_LoadNamedFragment(const FSSpec *fileSpec, const char* fragmentName)
 		goto unlock;
 
   newLib->name = strdup(fragmentName);
-  newLib->dlh = connectionID;
+  newLib->connection = connectionID;
   newLib->next = pr_loadmap;
   pr_loadmap = newLib;
 
@@ -1037,7 +1212,7 @@ pr_Mac_LoadIndexedFragment(const FSSpec *fileSpec, PRUint32 fragIndex)
 	}
 
   newLib->name = fragmentName;			/* was malloced in NSLoadIndexedFragment */
-  newLib->dlh = connectionID;
+  newLib->connection = connectionID;
   newLib->next = pr_loadmap;
   pr_loadmap = newLib;
 
@@ -1107,14 +1282,18 @@ PR_UnloadLibrary(PRLibrary *lib)
     }
 #endif  /* XP_PC */
 
-#if defined(XP_MAC) && TARGET_RT_MAC_CFM
+#if defined(XP_MAC) || defined(XP_MACOSX)
     /* Close the connection */
+    if (lib->connection)
+        CloseConnection(&(lib->connection));
 #if TARGET_CARBON
     if (lib->bundle)
         CFRelease(lib->bundle);
-    else
 #endif
-    CloseConnection(&(lib->dlh));
+#if defined(XP_MACOSX)
+    if (lib->wrappers)
+        CFRelease(lib->wrappers);
+#endif
 #endif
 
     /* unlink from library search list */
@@ -1148,7 +1327,8 @@ PR_UnloadLibrary(PRLibrary *lib)
 
   freeLib:
     PR_LOG(_pr_linker_lm, PR_LOG_MIN, ("Unloaded library %s", lib->name));
-    PR_DELETE(lib->name);
+    free(lib->name);
+    lib->name = NULL;
     PR_DELETE(lib);
     if (result == -1) {
         PR_SetError(PR_UNLOAD_LIBRARY_ERROR, _MD_ERRNO());
@@ -1167,12 +1347,12 @@ pr_FindSymbolInLib(PRLibrary *lm, const char *name)
     void *f = NULL;
 
     if (lm->staticTable != NULL) {
-    const PRStaticLinkTable* tp;
-    for (tp = lm->staticTable; tp->name; tp++) {
-        if (strcmp(name, tp->name) == 0) {
-        return (void*) tp->fp;
+        const PRStaticLinkTable* tp;
+        for (tp = lm->staticTable; tp->name; tp++) {
+            if (strcmp(name, tp->name) == 0) {
+                return (void*) tp->fp;
+            }
         }
-    }
         /* 
         ** If the symbol was not found in the static table then check if
         ** the symbol was exported in the DLL... Win16 only!!
@@ -1191,29 +1371,46 @@ pr_FindSymbolInLib(PRLibrary *lm, const char *name)
     f = GetProcAddress(lm->dlh, name);
 #endif  /* WIN32 || WIN16 */
 
-#ifdef XP_MAC
+#if defined(XP_MAC) || defined(XP_MACOSX)
+#if defined(NEED_LEADING_UNDERSCORE)
+#define SYM_OFFSET 1
+#else
+#define SYM_OFFSET 0
+#endif
 #if TARGET_CARBON
-    if (lm->bundle)
-    {
-        CFStringRef nameRef = CFStringCreateWithCString(NULL, name, kCFStringEncodingASCII);
+    if (lm->bundle) {
+        CFStringRef nameRef = CFStringCreateWithCString(NULL, name + SYM_OFFSET, kCFStringEncodingASCII);
         if (nameRef) {
             f = CFBundleGetFunctionPointerForName(lm->bundle, nameRef);
             CFRelease(nameRef);
         }
     }
-    else
 #endif
-    {
+    if (lm->connection) {
         Ptr                 symAddr;
         CFragSymbolClass    symClass;
         Str255              pName;
-            
-        PStrFromCStr(name, pName);    
         
-        f = (NSFindSymbol(lm->dlh, pName, &symAddr, &symClass) == noErr) ? symAddr : NULL;
+        PR_LOG(_pr_linker_lm, PR_LOG_MIN, ("Looking up symbol: %s", name + SYM_OFFSET));
         
-        if (f == NULL && strcmp(name, "main") == 0) f = lm->main;
+        PStrFromCStr(name + SYM_OFFSET, pName);
+        
+#if defined(XP_MACOSX)
+        f = (FindSymbol(lm->connection, pName, &symAddr, &symClass) == noErr) ? symAddr : NULL;
+#else
+        f = (NSFindSymbol(lm->connection, pName, &symAddr, &symClass) == noErr) ? symAddr : NULL;
+#endif
+        
+#if defined(XP_MACOSX)
+        /* callers expect mach-o function pointers, so must wrap tvectors with glue. */
+        if (f && symClass == kTVectorCFragSymbol) {
+            f = TV2FP(lm->wrappers, name + SYM_OFFSET, f);
+        }
+#endif
+        
+        if (f == NULL && strcmp(name + SYM_OFFSET, "main") == 0) f = lm->main;
     }
+#undef SYM_OFFSET
 #endif /* XP_MAC */
 
 #ifdef XP_BEOS
@@ -1231,7 +1428,7 @@ pr_FindSymbolInLib(PRLibrary *lm, const char *name)
         f = NULL;
     }
 #elif defined(USE_MACH_DYLD)
-    {
+    if (lm->dlh) {
         NSSymbol symbol;
         symbol = NSLookupSymbolInModule(lm->dlh, name);
         if (symbol != NULL)
@@ -1385,7 +1582,11 @@ PR_LoadStaticLibrary(const char *name, const PRStaticLinkTable *slt)
 
     lm->name = strdup(name);
     lm->refCount    = 1;
+#if defined(XP_MAC)
+    lm->connection  = pr_exe_loadmap ? pr_exe_loadmap->connection : 0;
+#else
     lm->dlh         = pr_exe_loadmap ? pr_exe_loadmap->dlh : 0;
+#endif
     lm->staticTable = slt;
     lm->next        = pr_loadmap;
     pr_loadmap      = lm;
@@ -1396,4 +1597,220 @@ PR_LoadStaticLibrary(const char *name, const PRStaticLinkTable *slt)
     PR_LOG(_pr_linker_lm, PR_LOG_MIN, ("Loaded library %s (static lib)", lm->name));
     PR_ExitMonitor(pr_linker_lock);
     return result;
+}
+
+PR_IMPLEMENT(char *)
+PR_GetLibraryFilePathname(const char *name, PRFuncPtr addr)
+{
+#if defined(SOLARIS) || defined(LINUX)
+    Dl_info dli;
+    char *result;
+
+    if (dladdr((void *)addr, &dli) == 0) {
+        PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, _MD_ERRNO());
+        DLLErrorInternal(_MD_ERRNO());
+        return NULL;
+    }
+    result = PR_Malloc(strlen(dli.dli_fname)+1);
+    if (result != NULL) {
+        strcpy(result, dli.dli_fname);
+    }
+    return result;
+#elif defined(USE_MACH_DYLD)
+    char *result;
+    char *image_name;
+    int i, count = _dyld_image_count();
+
+    for (i = 0; i < count; i++) {
+        image_name = _dyld_get_image_name(i);
+        if (strstr(image_name, name) != NULL) {
+            result = PR_Malloc(strlen(image_name)+1);
+            if (result != NULL) {
+                strcpy(result, image_name);
+            }
+            return result;
+        }
+    }
+    PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, 0);
+    return NULL;
+#elif defined(AIX)
+    char *result;
+#define LD_INFO_INCREMENT 64
+    struct ld_info *info;
+    unsigned int info_length = LD_INFO_INCREMENT * sizeof(struct ld_info);
+    struct ld_info *infop;
+
+    for (;;) {
+        info = PR_Malloc(info_length);
+        if (info == NULL) {
+            return NULL;
+        }
+        /* If buffer is too small, loadquery fails with ENOMEM. */
+        if (loadquery(L_GETINFO, info, info_length) != -1) {
+            break;
+        }
+        PR_Free(info);
+        if (errno != ENOMEM) {
+            /* should not happen */
+            _PR_MD_MAP_DEFAULT_ERROR(_MD_ERRNO());
+            return NULL;
+        }
+        /* retry with a larger buffer */
+        info_length += LD_INFO_INCREMENT * sizeof(struct ld_info);
+    }
+
+    for (infop = info;
+         ;
+         infop = (struct ld_info *)((char *)infop + infop->ldinfo_next)) {
+        if (strstr(infop->ldinfo_filename, name) != NULL) {
+            result = PR_Malloc(strlen(infop->ldinfo_filename)+1);
+            if (result != NULL) {
+                strcpy(result, infop->ldinfo_filename);
+            }
+            break;
+        }
+        if (!infop->ldinfo_next) {
+            PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, 0);
+            result = NULL;
+            break;
+        }
+    }
+    PR_Free(info);
+    return result;
+#elif defined(OSF1)
+    /* Contributed by Steve Streeter of HP */
+    ldr_process_t process, ldr_my_process();
+    ldr_module_t mod_id;
+    ldr_module_info_t info;
+    ldr_region_t regno;
+    ldr_region_info_t reginfo;
+    size_t retsize;
+    int rv;
+    char *result;
+
+    /* Get process for which dynamic modules will be listed */
+
+    process = ldr_my_process();
+
+    /* Attach to process */
+
+    rv = ldr_xattach(process);
+    if (rv) {
+        /* should not happen */
+        _PR_MD_MAP_DEFAULT_ERROR(_MD_ERRNO());
+        return NULL;
+    }
+
+    /* Print information for list of modules */
+
+    mod_id = LDR_NULL_MODULE;
+
+    for (;;) {
+
+        /* Get information for the next module in the module list. */
+
+        ldr_next_module(process, &mod_id);
+        if (ldr_inq_module(process, mod_id, &info, sizeof(info),
+                           &retsize) != 0) {
+            /* No more modules */
+            break;
+        }
+        if (retsize < sizeof(info)) {
+            continue;
+        }
+
+        /*
+         * Get information for each region in the module and check if any
+         * contain the address of this function.
+         */
+
+        for (regno = 0; ; regno++) {
+            if (ldr_inq_region(process, mod_id, regno, &reginfo,
+                               sizeof(reginfo), &retsize) != 0) {
+                /* No more regions */
+                break;
+            }
+            if (((unsigned long)reginfo.lri_mapaddr <=
+                (unsigned long)addr) &&
+                (((unsigned long)reginfo.lri_mapaddr + reginfo.lri_size) >
+                (unsigned long)addr)) {
+                /* Found it. */
+                result = PR_Malloc(strlen(info.lmi_name)+1);
+                if (result != NULL) {
+                    strcpy(result, info.lmi_name);
+                }
+                return result;
+            }
+        }
+    }
+    PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, 0);
+    return NULL;
+#elif defined(HPUX) && defined(USE_HPSHL)
+    shl_t handle;
+    struct shl_descriptor desc;
+    char *result;
+
+    handle = shl_load(name, DYNAMIC_PATH, 0L);
+    if (handle == NULL) {
+        PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, _MD_ERRNO());
+        DLLErrorInternal(_MD_ERRNO());
+        return NULL;
+    }
+    if (shl_gethandle_r(handle, &desc) == -1) {
+        /* should not happen */
+        _PR_MD_MAP_DEFAULT_ERROR(_MD_ERRNO());
+        return NULL;
+    }
+    result = PR_Malloc(strlen(desc.filename)+1);
+    if (result != NULL) {
+        strcpy(result, desc.filename);
+    }
+    return result;
+#elif defined(HPUX) && defined(USE_DLFCN)
+    struct load_module_desc desc;
+    char *result;
+    const char *module_name;
+
+    if (dlmodinfo((unsigned long)addr, &desc, sizeof desc, NULL, 0, 0) == 0) {
+        PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, _MD_ERRNO());
+        DLLErrorInternal(_MD_ERRNO());
+        return NULL;
+    }
+    module_name = dlgetname(&desc, sizeof desc, NULL, 0, 0);
+    if (module_name == NULL) {
+        /* should not happen */
+        _PR_MD_MAP_DEFAULT_ERROR(_MD_ERRNO());
+        DLLErrorInternal(_MD_ERRNO());
+        return NULL;
+    }
+    result = PR_Malloc(strlen(module_name)+1);
+    if (result != NULL) {
+        strcpy(result, module_name);
+    }
+    return result;
+#elif defined(WIN32)
+    HMODULE handle;
+    char module_name[MAX_PATH];
+    char *result;
+
+    handle = GetModuleHandle(name);
+    if (handle == NULL) {
+        PR_SetError(PR_LIBRARY_NOT_LOADED_ERROR, _MD_ERRNO());
+        DLLErrorInternal(_MD_ERRNO());
+        return NULL;
+    }
+    if (GetModuleFileName(handle, module_name, sizeof module_name) == 0) {
+        /* should not happen */
+        _PR_MD_MAP_DEFAULT_ERROR(_MD_ERRNO());
+        return NULL;
+    }
+    result = PR_Malloc(strlen(module_name)+1);
+    if (result != NULL) {
+        strcpy(result, module_name);
+    }
+    return result;
+#else
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return NULL;
+#endif
 }

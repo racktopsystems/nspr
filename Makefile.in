@@ -41,6 +41,8 @@ VPATH		= @srcdir@
 
 include $(MOD_DEPTH)/config/autoconf.mk
 
+MAKE := $(patsubst -j%,,$(MAKE)) -j1
+
 DIRS = config pr lib
 
 ifdef MOZILLA_CLIENT
@@ -108,12 +110,12 @@ ifeq ($(OS_ARCH),WINNT)
 	@if test ! -d $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER); then \
 		rm -rf $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER); \
 		echo "making directory $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)"; \
-		config/prmkdir.bat $(MDIST_DOS)\\$(MOD_NAME)\\$(BUILD_NUMBER); \
+		$(topsrcdir)/config/prmkdir.bat $(MDIST_DOS)\\$(MOD_NAME)\\$(BUILD_NUMBER); \
 	fi
 	@if test ! -d $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)/$(RELEASE_OBJDIR_NAME); then \
 		rm -rf $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)/$(RELEASE_OBJDIR_NAME); \
 		echo "making directory $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)/$(RELEASE_OBJDIR_NAME)"; \
-		config/prmkdir.bat $(MDIST_DOS)\\$(MOD_NAME)\\$(BUILD_NUMBER)\\$(RELEASE_OBJDIR_NAME); \
+		$(topsrcdir)/config/prmkdir.bat $(MDIST_DOS)\\$(MOD_NAME)\\$(BUILD_NUMBER)\\$(RELEASE_OBJDIR_NAME); \
 	fi
 else
 	@if test ! -d $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER); then \
@@ -139,6 +141,10 @@ endif
 	cd include; \
 	cp -f mdheader.jar $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)/$(RELEASE_OBJDIR_NAME); \
 	chmod 664 $(MDIST)/$(MOD_NAME)/$(BUILD_NUMBER)/$(RELEASE_OBJDIR_NAME)/mdheader.jar
+
+solarispkg:
+	@echo Making Solaris packages.
+	$(MAKE) -C pkg/solaris publish
 
 depend:
 	@echo "NSPR20 has no dependencies.  Skipped."

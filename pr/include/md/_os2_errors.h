@@ -40,14 +40,17 @@
   #include <assert.h>
 #endif  
 
+NSPR_API(void) _MD_os2_map_default_error(PRInt32 err);
+#define	_PR_MD_MAP_DEFAULT_ERROR	_MD_os2_map_default_error
+
 NSPR_API(void) _MD_os2_map_opendir_error(PRInt32 err);
 #define	_PR_MD_MAP_OPENDIR_ERROR	_MD_os2_map_opendir_error
 
 NSPR_API(void) _MD_os2_map_closedir_error(PRInt32 err);
 #define	_PR_MD_MAP_CLOSEDIR_ERROR	_MD_os2_map_closedir_error
 
-NSPR_API(void) _MD_unix_readdir_error(PRInt32 err);
-#define	_PR_MD_MAP_READDIR_ERROR	_MD_unix_readdir_error
+NSPR_API(void) _MD_os2_readdir_error(PRInt32 err);
+#define	_PR_MD_MAP_READDIR_ERROR	_MD_os2_readdir_error
 
 NSPR_API(void) _MD_os2_map_delete_error(PRInt32 err);
 #define	_PR_MD_MAP_DELETE_ERROR	_MD_os2_map_delete_error
@@ -102,6 +105,9 @@ NSPR_API(void) _MD_os2_map_send_error(PRInt32 err);
 
 NSPR_API(void) _MD_os2_map_sendto_error(PRInt32 err);
 #define	_PR_MD_MAP_SENDTO_ERROR	_MD_os2_map_sendto_error
+
+NSPR_API(void) _MD_os2_map_writev_error(int err);
+#define	_PR_MD_MAP_WRITEV_ERROR	_MD_os2_map_writev_error
 
 NSPR_API(void) _MD_os2_map_accept_error(PRInt32 err);
 #define	_PR_MD_MAP_ACCEPT_ERROR	_MD_os2_map_accept_error

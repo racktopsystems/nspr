@@ -41,7 +41,13 @@
 
 #define PR_LINKER_ARCH	"solaris"
 #define _PR_SI_SYSNAME	"SOLARIS"
+#ifdef sparc
 #define _PR_SI_ARCHITECTURE	"sparc"
+#elif defined(i386)
+#define _PR_SI_ARCHITECTURE	"x86"
+#else
+#error unknown processor
+#endif
 #define PR_DLL_SUFFIX		".so"
 
 #define _PR_VMBASE		0x30000000
@@ -105,7 +111,9 @@
 #define _PR_HAVE_GETIPNODEBYADDR
 #define _PR_INET6_PROBE
 #define _PR_ACCEPT_INHERIT_NONBLOCK
-#ifndef _PR_INET6
+#ifdef _PR_INET6
+#define _PR_HAVE_INET_NTOP
+#else
 #define AF_INET6 26
 #define AI_V4MAPPED 0x0001 
 #define AI_ALL      0x0002
@@ -783,6 +791,8 @@ extern int gethostname (char *name, int namelen);
 PR_END_EXTERN_C
 
 #endif /* _PR_GLOBAL_THREADS_ONLY */
+
+extern void _MD_solaris_map_sendfile_error(int err);
 
 #endif /* nspr_solaris_defs_h___ */
 

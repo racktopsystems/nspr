@@ -112,6 +112,16 @@ struct _MDDir {
     PRUint32         magic;          /* for debugging */
 };
 
+#ifdef MOZ_UNICODE
+struct _MDDirUTF16 {
+    HANDLE           d_hdl;
+    WIN32_FIND_DATAW d_entry;
+    PRBool           firstEntry;     /* Is this the entry returned
+                                      * by FindFirstFileW()? */
+    PRUint32         magic;          /* for debugging */
+};
+#endif /* MOZ_UNICODE */
+
 struct _MDCVar {
     PRUint32 magic;
     struct PRThread *waitHead, *waitTail;  /* the wait queue: a doubly-
@@ -213,6 +223,15 @@ extern PRInt32 _MD_CloseFile(PRInt32 osfd);
 #define _MD_TLOCKFILE                 _PR_MD_TLOCKFILE
 #define _MD_UNLOCKFILE                _PR_MD_UNLOCKFILE
 
+#ifdef MOZ_UNICODE
+/* --- UTF16 IO stuff --- */
+#define _MD_OPEN_FILE_UTF16           _PR_MD_OPEN_FILE_UTF16
+#define _MD_OPEN_DIR_UTF16            _PR_MD_OPEN_DIR_UTF16
+#define _MD_READ_DIR_UTF16            _PR_MD_READ_DIR_UTF16
+#define _MD_CLOSE_DIR_UTF16           _PR_MD_CLOSE_DIR_UTF16
+#define _MD_GETFILEINFO64_UTF16       _PR_MD_GETFILEINFO64_UTF16
+#endif /* MOZ_UNICODE */
+
 /* --- Socket IO stuff --- */
 #define _MD_EACCES                WSAEACCES
 #define _MD_EADDRINUSE            WSAEADDRINUSE
@@ -243,7 +262,7 @@ extern void _MD_MakeNonblock(PRFileDesc *f);
 #define _MD_INIT_FD_INHERITABLE       _PR_MD_INIT_FD_INHERITABLE
 #define _MD_QUERY_FD_INHERITABLE      _PR_MD_QUERY_FD_INHERITABLE
 #define _MD_SHUTDOWN                  _PR_MD_SHUTDOWN
-#define _MD_LISTEN(s, backlog)        listen(s->secret->md.osfd,backlog)
+#define _MD_LISTEN                    _PR_MD_LISTEN
 extern PRInt32 _MD_CloseSocket(PRInt32 osfd);
 #define _MD_CLOSE_SOCKET              _MD_CloseSocket
 #define _MD_SENDTO                    _PR_MD_SENDTO
@@ -404,6 +423,9 @@ extern PRStatus _PR_KillWindowsProcess(struct PRProcess *process);
 #define _MD_INTERVAL_PER_SEC              _PR_MD_INTERVAL_PER_SEC
 #define _MD_INTERVAL_PER_MILLISEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000)
 #define _MD_INTERVAL_PER_MICROSEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000000)
+
+/* --- Time --- */
+extern void _PR_FileTimeToPRTime(const FILETIME *filetime, PRTime *prtm);
 
 /* --- Native-Thread Specific Definitions ------------------------------- */
 
