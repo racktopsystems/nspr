@@ -251,7 +251,14 @@ extern PRInt32 _MD_CloseSocket(PRInt32 osfd);
 #define _MD_GETPEERNAME               (_PR_MD_GETPEERNAME)
 #define _MD_GETSOCKOPT                (_PR_MD_GETSOCKOPT)
 #define _MD_SETSOCKOPT                (_PR_MD_SETSOCKOPT)
+
+#ifdef XP_OS2_EMX
+extern PRInt32 _MD_SELECT(int nfds, fd_set *readfds, fd_set *writefds,
+                                    fd_set *exceptfds, struct timeval *timeout);
+#else
 #define _MD_SELECT                    select
+#endif
+
 #define _MD_FSYNC                     _PR_MD_FSYNC
 #define _MD_SET_FD_INHERITABLE        (_PR_MD_SET_FD_INHERITABLE)
 
