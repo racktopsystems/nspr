@@ -93,14 +93,6 @@ PRStatus
 _PR_MD_INIT_THREAD(PRThread *thread)
 {
    APIRET rv;
-#ifdef XP_OS2_EMX
-   /* disable SIGPIPE */
-   struct sigaction sa;
-   sa.sa_handler = SIG_IGN;
-   sa.sa_flags = 0;
-   sigemptyset( &sa.sa_mask);
-   sigaction( SIGPIPE, &sa, NULL);
-#endif
 
    if (thread->flags & (_PR_PRIMORDIAL | _PR_ATTACHED)) {
       _pr_SetThreadMDHandle(thread);
@@ -127,7 +119,15 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
     if(thread->md.handle == -1) {
         return PR_FAILURE;
     }
-    _PR_MD_SET_PRIORITY(&(thread->md), priority);
+
+    /*
+     * On OS/2, a thread is created with a thread priority of
+     * THREAD_PRIORITY_NORMAL
+     */
+
+    if (priority != PR_PRIORITY_NORMAL) {
+        _PR_MD_SET_PRIORITY(&(thread->md), priority);
+    }
 
     return PR_SUCCESS;
 }
@@ -268,5 +268,21 @@ _PR_MD_RESUME_THREAD(PRThread *thread)
     if (_PR_IS_NATIVE_THREAD(thread)) {
         DosResumeThread(thread->md.handle);
     }
+}
+
+
+PRThread*
+_MD_CURRENT_THREAD(void)
+{
+    PRThread *thread;
+
+    thread = _MD_GET_ATTACHED_THREAD();
+
+    if (NULL == thread) {
+        thread = _PRI_AttachThread(PR_USER_THREAD, PR_PRIORITY_NORMAL, NULL, 0);
+    }
+
+    PR_ASSERT(thread != NULL);
+    return thread;
 }
 

@@ -31,10 +31,24 @@
 # GPL.
 # 
 
-# 
-# Module description file
-#
-# A module is also called a component or a subsystem.
+#! gmake
 
-MOD_NAME = nspr20
-MOD_VERSION = 4
+MOD_DEPTH	= ..
+topsrcdir	= @top_srcdir@
+srcdir		= @srcdir@
+VPATH		= @srcdir@
+
+include $(MOD_DEPTH)/config/autoconf.mk
+
+DIRS = 
+ifeq ($(OS_TARGET),Linux)
+DIRS = linux
+endif
+ifeq ($(OS_TARGET),SunOS)
+DIRS = solaris
+endif
+
+publish::
+	+$(LOOP_OVER_DIRS)
+
+include $(topsrcdir)/config/rules.mk

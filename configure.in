@@ -43,8 +43,8 @@ dnl ========================================================
 dnl = Defaults
 dnl ========================================================
 MOD_MAJOR_VERSION=4
-MOD_MINOR_VERSION=2
-MOD_REVISION_VERSION=0
+MOD_MINOR_VERSION=3
+MOD_PATCH_VERSION=0
 NSPR_MODNAME=nspr20
 _HAVE_PTHREADS=
 USE_PTHREADS=
@@ -55,6 +55,7 @@ USE_64=
 USE_CPLUS=
 USE_IPV6=
 USE_MDUPDATE=
+MACOS_DEPLOYMENT_TARGET=
 _OPTIMIZE_FLAGS=-O
 _DEBUG_FLAGS=-g
 MOZ_DEBUG=1
@@ -66,6 +67,7 @@ NSINSTALL='$(MOD_DEPTH)/config/$(OBJDIR_NAME)/nsinstall'
 NOSUCHFILE=/no-such-file
 LIBNSPR='-L$(dist_libdir) -lnspr$(MOD_MAJOR_VERSION)'
 LIBPLC='-L$(dist_libdir) -lplc$(MOD_MAJOR_VERSION)'
+CYGWIN_WRAPPER=
 
 dnl Link in libraries necessary to resolve all symbols for shared libs
 RESOLVE_LINK_SYMBOLS=
@@ -84,16 +86,18 @@ HOST_CFLAGS="${HOST_CFLAGS=}"
 HOST_LDFLAGS="${HOST_LDFLAGS=}"
 
 case "$target" in
-*-cygwin*)
+*-cygwin*|*-mingw*)
     # Check to see if we are really running in a msvc environemnt
     _WIN32_MSVC=
-    if test "$CC" = "cl" || test "$CXX" = "cl"; then
-        _WIN32_MSVC=1
-    elif test -z "$CC"; then
+    AC_CHECK_PROGS(CC, cl)
+    if test "$CC" = "cl"; then
         echo 'main() { return 0; }' > dummy.c
-        cl -o dummy dummy.c
+        ${CC} -o dummy dummy.c >/dev/null 2>&1
         if test $? = 0; then
             _WIN32_MSVC=1
+            CXX=$CC
+        else
+            AC_MSG_WARN([$(CC) test failed.  Using normal feature tests])
         fi
         rm -f dummy dummy.o dummy.obj dummy.exe dummy.c
     fi
@@ -101,7 +105,7 @@ case "$target" in
 *-msvc*)
     _WIN32_MSVC=1
     ;;
-*-mksnt*)
+*-mks*)
     _WIN32_MSVC=1
     ;;
 esac
@@ -212,6 +216,12 @@ AC_ARG_ENABLE(mdupdate,
 	    USE_MDUPDATE=1
       fi ])
 
+AC_ARG_ENABLE(macos-target,
+             [  --enable-macos-target=VER (default=10.1)
+                          Set the minimum MacOS version needed at runtime],
+             [MACOS_DEPLOYMENT_TARGET_STR=$enableval],
+             [MACOS_DEPLOYMENT_TARGET_STR=10.1])
+
 dnl ========================================================
 dnl =
 dnl = Set the threading model
@@ -253,6 +263,10 @@ if test -z "$CC"; then
     ;;
 
     *-irix*)
+        CC=cc
+    ;;
+
+    *-openvms*)
         CC=cc
     ;;
 
@@ -301,6 +315,10 @@ if test -z "$CXX"; then
         CXX=CC
     ;;
 
+    *-openvms*)
+        CXX=cxx
+    ;;
+
     *-osf*)
         CXX=cxx
     ;;
@@ -314,14 +332,23 @@ fi
 
 if test -z "$SKIP_PATH_CHECKS"; then
     AC_PATH_PROG(WHOAMI, $WHOAMI whoami, echo not_whoami)
-elif test -z "$WHOAMI"; then
-    WHOAMI=whoami
 fi
 
 if test -n "$MOZ_DEBUG"; then
     AC_DEFINE(DEBUG)
-    AC_DEFINE_UNQUOTED(DEBUG_`$WHOAMI`)
     DEFINES="$DEFINES -UNDEBUG"
+
+    case "${target_os}" in
+    beos*)
+        DEFINES="$DEFINES -DDEBUG_${USER}"
+        ;;
+    msvc*|mks*|cygwin*|mingw*|os2*)
+        DEFINES="$DEFINES -DDEBUG_`echo ${USERNAME} | sed -e 's| |_|g'`"
+        ;;
+    *) 
+        DEFINES="$DEFINES -DDEBUG_`$WHOAMI`"
+        ;;
+    esac
 else
     AC_DEFINE(NDEBUG)
     DEFINES="$DEFINES -UDEBUG"
@@ -392,9 +419,6 @@ if test "$target" != "$host"; then
     if test -z "$STRIP"; then
 	    AC_CHECK_PROGS(STRIP, "${target_alias}-strip" "${target}-strip", echo)
     fi
-    if test -z "$DLLTOOL"; then
-	    AC_CHECK_PROGS(DLLTOOL, "${target_alias}-dlltool" "${target}-dlltool", echo)
-    fi
     if test -z "$WINDRES"; then
 	    AC_CHECK_PROGS(WINDRES, "${target_alias}-windres" "${target}-windres", echo)
     fi
@@ -412,7 +436,6 @@ else
     AC_PATH_PROGS(AR, ar, echo not_ar)
     AC_PATH_PROGS(LD, ld link, echo not_ld)
     AC_PATH_PROGS(STRIP, strip, echo not_strip)
-    AC_PATH_PROGS(DLLTOOL, dlltool, echo not_dlltool)
     AC_PATH_PROGS(WINDRES, windres, echo not_windres)
     if test -z "$HOST_CC"; then
 	    HOST_CC="$CC"
@@ -428,7 +451,7 @@ fi
 if test "$GXX" = "yes"; then
     GNU_CXX=1
 fi
-if test "`echo | $AS -V 2>&1 | grep -c GNU`" != "0"; then
+if test "`echo | $AS -v 2>&1 | grep -c GNU`" != "0"; then
     GNU_AS=1
 fi
 rm -f a.out
@@ -445,7 +468,7 @@ dnl ========================================================
 AC_MSG_CHECKING([for gcc -pipe support])
 if test -n "$GNU_CC" && test -n "$GNU_CXX" && test -n "$GNU_AS"; then
     echo '#include <stdio.h>' > dummy-hello.c
-    echo 'int main() { printf("Hello World\n"); exit(0); }' >> dummy-hello.c
+    echo 'int main() { printf("Hello World\n"); return 0; }' >> dummy-hello.c
     ${CC} -S dummy-hello.c -o dummy-hello.s 2>&5
     cat dummy-hello.s | ${AS} -o dummy-hello.S - 2>&5
     if test $? = 0; then
@@ -509,12 +532,21 @@ if test "$OS_ARCH" = "IRIX64"; then
     OS_ARCH=IRIX
 fi
 
-if test "$OS_ARCH" = "Linux"; then
+if test "$OS_ARCH" = "AIX"; then
+    OS_RELEASE=`uname -v`.`uname -r`
+fi
+
+if test "$OS_ARCH" = "FreeBSD"; then
     OS_RELEASE=`echo $OS_RELEASE | sed 's/-.*//'`
 fi
 
-if test "$OS_ARCH" = "POSIX_for_OpenVMS_AXP"; then
-    OS_ARCH=OpenVMS
+if test "$OS_ARCH" = "Linux"; then
+    OS_RELEASE=`echo $OS_RELEASE | sed 's/-.*//'`
+    OS_RELEASE=`echo $OS_RELEASE | awk -F\. '{ print $1 "." $2 }'`
+fi
+
+if test "$OS_ARCH" = "OpenVMS"; then
+    OS_RELEASE=`uname -v`
 fi
 
 #######################################################################
@@ -552,10 +584,7 @@ elif test "$OS_ARCH" = 'Windows_95'; then
 elif test "$OS_ARCH" = 'Windows_98'; then
     OS_ARCH=Windows_NT
     OS_TARGET=WIN95
-elif test "$OS_ARCH" = "CYGWIN_95-4.0"; then
-    OS_ARCH='CYGWIN_NT-4.0'
-    OS_TARGET=WIN95
-elif test "$OS_ARCH" = "CYGWIN_98-4.10"; then
+elif test "`echo $OS_ARCH | egrep -c '^(CYGWIN_9|CYGWIN_ME)' 2>/dev/null`" != 0; then
     OS_ARCH='CYGWIN_NT-4.0'
     OS_TARGET=WIN95
 elif test "$OS_ARCH" = "OS_2"; then
@@ -647,7 +676,7 @@ dnl ========================================================
 dnl Override of system specific host options
 dnl ========================================================
 case "$host" in
-*-mingw*|*-cygwin*|*-msvc*|*-mksnt*)
+*-mingw*|*-cygwin*|*-msvc*|*-mks*)
     ;;
 *-beos*)
     HOST_CFLAGS="$HOST_CFLAGS -DXP_BEOS -DBeOS -DBEOS -D_POSIX_SOURCE"
@@ -695,7 +724,7 @@ case "$target" in
     aix4.3*)
         AC_DEFINE(AIX_TIMERS)
         AC_DEFINE(_PR_HAVE_OFF64_T)
-        AC_DEFINE(AIX4_3)
+        AC_DEFINE(AIX4_3_PLUS)
         AC_DEFINE(HAVE_SOCKLEN_T)
         AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
         USE_IPV6=1
@@ -704,6 +733,7 @@ case "$target" in
     *)
         AC_DEFINE(AIX_TIMERS)
         AC_DEFINE(_PR_HAVE_OFF64_T)
+        AC_DEFINE(AIX4_3_PLUS)
         AC_DEFINE(HAVE_SOCKLEN_T)
         AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
         USE_IPV6=1
@@ -720,11 +750,7 @@ case "$target" in
         MDCPUCFG_H=_aix64.cfg
         OBJECT_MODE=64
     else
-        if test -n "$USE_IPV6"; then
-            MDCPUCFG_H=_aix32in6.cfg
-        else
-            MDCPUCFG_H=_aix32.cfg
-        fi
+        MDCPUCFG_H=_aix32.cfg
     fi
     PR_MD_CSRCS=aix.c
     RESOLVE_LINK_SYMBOLS=1
@@ -741,10 +767,11 @@ case "$target" in
     PR_MD_ARCH_DIR=beos
     RESOLVE_LINK_SYMBOLS=1
     case "${target_cpu}" in
-    i?86)
+    i*86)
         _OPTIMIZE_FLAGS=-O2
         _DEBUG_FLAGS='-gdwarf-2 -O0'
         MKSHLIB='$(CCC) $(DSO_LDOPTS) -o $@'
+        AC_CHECK_LIB(bind, gethostbyaddr, [OS_LIBS="$OS_LIBS -lbind -lsocket"])
         ;;
     powerpc)
         CC=mwcc
@@ -795,7 +822,7 @@ case "$target" in
         PR_MD_ASFILES=os_BSD_OS_386_2.s
         ;;
 
-    bsdi4.*)
+    bsdi4.* | bsdi5.*)
         AC_DEFINE(_PR_SELECT_CONST_TIMEVAL)
         AC_DEFINE(_PR_BSDI_JMPBUF_IS_STRUCT)
         AC_DEFINE(HAVE_DLL)
@@ -806,7 +833,7 @@ case "$target" in
         DSO_LDOPTS='-shared -Wl,-soname,$(@:$(OBJDIR)/%.so=%.so)'
         STRIP="$STRIP -d"
         case "$target_os" in
-        bsdi4.2*)
+        bsdi4.2* | bsdi4.3* | bsdi5.*)
             AC_DEFINE(_PR_HAVE_GETPROTO_R)
             AC_DEFINE(_PR_HAVE_GETPROTO_R_POINTER)
             ;;
@@ -829,7 +856,6 @@ case "$target" in
     AC_DEFINE(HAVE_BSD_FLOCK)
     CFLAGS="$CFLAGS -Wmost -fno-common"
     if echo $OS_TEST | grep -c 86 2>/dev/null; then
-        CFLAGS="$CFLAGS -mno-486"
         AC_DEFINE(i386)
         CPU_ARCH=i386
     else
@@ -845,6 +871,31 @@ case "$target" in
     USE_PTHREADS=1
     MDCPUCFG_H=_darwin.cfg
     PR_MD_CSRCS=darwin.c
+    if test "$CPU_ARCH" = "ppc"; then
+        PR_MD_ASFILES=os_Darwin_ppc.s
+    fi
+
+    # Add Mac OS X support for loading CFM & CFBundle plugins
+    if test -f /System/Library/Frameworks/Carbon.framework/Carbon; then
+        AC_DEFINE(XP_MACOSX)
+        OS_TARGET=MacOSX
+
+        dnl The C preprocessor can only handle integers in comparisons, so
+        dnl convert the version to the form AABBCC where AA=major release,
+        dnl BB=minor release, and CC=point/micro release.
+
+        MACOS_VERSION_MAJOR=`echo $MACOS_DEPLOYMENT_TARGET_STR | cut -d . -f 1`
+        MACOS_VERSION_MINOR=`echo $MACOS_DEPLOYMENT_TARGET_STR | cut -d . -f 2`
+        MACOS_VERSION_MICRO=`echo $MACOS_DEPLOYMENT_TARGET_STR | cut -d . -f 3`
+        if test -z "$MACOS_VERSION_MINOR"; then
+            MACOS_VERSION_MINOR=0
+        fi
+        if test -z "$MACOS_VERSION_MICRO"; then
+            MACOS_VERSION_MICRO=0
+        fi
+        MACOS_DEPLOYMENT_TARGET=`printf "%02d%02d%02d" "$MACOS_VERSION_MAJOR" "$MACOS_VERSION_MINOR" "$MACOS_VERSION_MICRO"`
+        AC_DEFINE_UNQUOTED(MACOS_DEPLOYMENT_TARGET, $MACOS_DEPLOYMENT_TARGET)
+    fi
     ;;
 
 *-dgux*)
@@ -876,8 +927,9 @@ case "$target" in
     else
         DLL_SUFFIX=so.1.0
     fi
+    MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
     DSO_CFLAGS=-fPIC
-    DSO_LDOPTS=-Bshareable
+    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
     MDCPUCFG_H=_freebsd.cfg
     PR_MD_CSRCS=freebsd.c
     ;;
@@ -887,10 +939,18 @@ case "$target" in
     AC_DEFINE(HPUX)
     AC_DEFINE(_HPUX_SOURCE)
     AC_DEFINE(hppa)
+    # OSF1 and HPUX report the POLLHUP event for a socket when the
+    # shutdown(SHUT_WR) operation is called for the remote end, even though
+    # the socket is still writeable. Use select(), instead of poll(), to
+    # workaround this problem.
+    AC_DEFINE(_PR_POLL_WITH_SELECT)
+    AC_DEFINE(_USE_BIG_FDS)
     DLL_SUFFIX=sl
     DSO_LDOPTS='-b +h $(notdir $@)'
     PR_MD_CSRCS=hpux.c
-    PR_MD_ASFILES=os_HPUX.s
+    if test "$OS_TEST" != "ia64"; then
+        PR_MD_ASFILES=os_HPUX.s
+    fi
     if test -n "$USE_64"; then
         MDCPUCFG_H=_hpux64.cfg
     else
@@ -899,8 +959,6 @@ case "$target" in
     if test -z "$GNU_CC"; then
         CC="$CC -Ae"
         CXX="$CXX -ext"
-        CFLAGS="$CFLAGS +ESlit"
-        CXXFLAGS="$CXXFLAGS +ESlit"
         DSO_CFLAGS=+Z
     else
         DSO_CFLAGS=-fPIC
@@ -929,9 +987,18 @@ case "$target" in
         AC_DEFINE(HAVE_INT_LOCALTIME_R)
     fi
 
-    if echo "$OS_RELEASE" | egrep '^(B.10.30|B.11.00|B.11.11)' >/dev/null; then
+    if echo "$OS_RELEASE" | egrep '^(B.10.30|B.11)' >/dev/null; then
         AC_DEFINE(HAVE_POINTER_LOCALTIME_R)
     fi
+
+    # HP-UX 11i (B.11.11) or higher
+    changequote(<<,>>)
+    case "$OS_RELEASE" in
+    [C-Z]*|B.[2-9]*|B.1[2-9]*|B.11.[2-9]*|B.11.1[1-9]*)
+        USE_IPV6=1
+        ;;
+    esac
+    changequote([,])
 
     if test "$OS_RELEASE" = "B.10.01"; then
         AC_DEFINE(HPUX10)
@@ -964,7 +1031,7 @@ case "$target" in
         DEFAULT_IMPL_STRATEGY=_PTH
     fi
 
-    if echo "$OS_RELEASE" | egrep '^(B.11.00|B.11.11)' >/dev/null; then
+    if echo "$OS_RELEASE" | grep ^B.11 >/dev/null; then
         AC_DEFINE(HPUX10)
         AC_DEFINE(HPUX11)
         AC_DEFINE(_LARGEFILE64_SOURCE)
@@ -972,11 +1039,21 @@ case "$target" in
         AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
         if test -z "$GNU_CC"; then
             if test -z "$USE_64"; then
-                CFLAGS="$CFLAGS +DAportable +DS2.0"
-                CXXFLAGS="$CXXFLAGS +DAportable +DS2.0"
+                if test "$OS_TEST" = "ia64"; then
+                    CFLAGS="$CFLAGS +DD32"
+                    CXXFLAGS="$CXXFLAGS +DD32"
+                else
+                    CFLAGS="$CFLAGS +DAportable +DS2.0"
+                    CXXFLAGS="$CXXFLAGS +DAportable +DS2.0"
+                fi
             else
-                CFLAGS="$CFLAGS +DA2.0W +DS2.0"
-                CXXFLAGS="$CXXFLAGS +DA2.0W +DS2.0"
+                if test "$OS_TEST" = "ia64"; then
+                    CFLAGS="$CFLAGS +DD64"
+                    CXXFLAGS="$CXXFLAGS +DD64"
+                else
+                    CFLAGS="$CFLAGS +DA2.0W +DS2.0"
+                    CXXFLAGS="$CXXFLAGS +DA2.0W +DS2.0"
+                fi
             fi
         fi
         DEFAULT_IMPL_STRATEGY=_PTH
@@ -1056,7 +1133,7 @@ case "$target" in
 	    if test "$USE_MDUPDATE"; then
                 CFLAGS="$CFLAGS -MDupdate \$(DEPENDENCIES)"
 	    fi
-	    case "$target}" in
+	    case "${target}" in
 	    *-irix6.*)
 	        CFLAGS="$CFLAGS -multigot"
 	        DSO_LDOPTS="-no_unresolved"
@@ -1108,7 +1185,6 @@ case "$target" in
     AC_DEFINE(_LARGEFILE64_SOURCE)
     AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
     AC_DEFINE(LINUX)
-    AC_DEFINE(linux)
     CFLAGS="$CFLAGS -ansi -Wall"
     CXXFLAGS="$CXXFLAGS -ansi -Wall"
     MDCPUCFG_H=_linux.cfg
@@ -1116,8 +1192,11 @@ case "$target" in
     MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
     DSO_CFLAGS=-fPIC
     DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
-    OS_LIBS="$OS_LIBS -lc"
     _OPTIMIZE_FLAGS=-O2
+    _DEBUG_FLAGS="-g -fno-inline"  # most people on linux use gcc/gdb, and that
+                                   # combo is not yet good at debugging inlined
+                                   # functions (even when using DWARF2 as the
+                                   # debugging format)
     COMPILER_TAG=_glibc
     if echo "$OS_TEST" | grep -c 86 >/dev/null; then
         CPU_ARCH=x86
@@ -1132,7 +1211,7 @@ case "$target" in
         CFLAGS="$CFLAGS -mieee"
         CXXFLAGS="$CXXFLAGS -mieee"
         ;;
-    i?86)
+    i*86)
         AC_DEFINE(i386)
         PR_MD_ASFILES=os_Linux_x86.s
         ;;
@@ -1140,27 +1219,29 @@ case "$target" in
         PR_MD_ASFILES=os_Linux_ia64.s
         ;;
     m68k)
-        CFLAGS="$CFLAGS -m68020-40"
-        CXXFLAGS="$CXXFLAGS -m68020-40"
-        #
-        # gcc on Linux/m68k either has a bug or triggers a code-sequence
-        # bug in the 68060 which causes gcc to crash.  The simplest way to
-        # avoid this is to enable a minimum level of optimization.
-        #
-        _DEBUG_FLAGS="$_DEBUG_FLAGS -O"
+        CFLAGS="$CFLAGS -m68020-60"
+        CXXFLAGS="$CXXFLAGS -m68020-60"
         ;;
     esac    
     ;;
 
-*-mingw*|*-cygwin*|*-msvc*|*-mksnt*)
+*-mingw*|*-cygwin*|*-msvc*|*-mks*)
     AC_DEFINE(XP_PC)
     AC_DEFINE(WIN32)
     PR_MD_ARCH_DIR=windows
     RESOLVE_LINK_SYMBOLS=1
+    NSINSTALL='$(CYGWIN_WRAPPER) nsinstall'
+    if test `echo "${PATH}" | grep -c \;` = 0; then
+        CYGWIN_WRAPPER='sh $(topsrcdir)/build/cygwin-wrapper'
+    fi
 
     if test -n "$GNU_CC"; then
-        AC_DEFINE(NONAMELESSUNION)
-        MKSHLIB='$(DLLTOOL) --as=$(AS) -k --dllname $*.dll --output-lib $@'
+        CC="$CC -mno-cygwin"
+        CXX="$CXX -mno-cygwin"
+        DLL_SUFFIX=dll
+        MKSHLIB='$(CC) -shared -Wl,--export-all-symbols -Wl,--out-implib -Wl,$(IMPORT_LIBRARY) $(DLLBASE) -o $(subst $(OBJDIR)/,,$(SHARED_LIBRARY))'
+        RC=$WINDRES
+        RCFLAGS='-O coff'
     else
         CC=cl
         CXX=cl
@@ -1169,12 +1250,11 @@ case "$target" in
         AR_FLAGS=
         RANLIB='echo not_ranlib'
         STRIP='echo not_strip'
-        NSINSTALL=nsinstall
         RC=rc.exe
         GARBAGE='$(OBJDIR)/vc20.pdb $(OBJDIR)/vc40.pdb'
-	    OBJ_SUFFIX=obj
-	    LIB_SUFFIX=lib
-	    DLL_SUFFIX=dll
+        OBJ_SUFFIX=obj
+        LIB_SUFFIX=lib
+        DLL_SUFFIX=dll
         
         CFLAGS="$CFLAGS -W3 -nologo -GF -Gy"
 
@@ -1234,6 +1314,8 @@ case "$target" in
         AC_DEFINE(WINNT)
     else
         AC_DEFINE(WIN95)
+        # undefine WINNT as some versions of mingw gcc define it by default
+        DEFINES="$DEFINES -UWINNT"
         AC_DEFINE(_PR_GLOBAL_THREADS_ONLY)
     fi
 
@@ -1265,7 +1347,7 @@ case "$target" in
     esac
 
     case "$target_cpu" in
-    i?86)
+    i*86)
 	    AC_DEFINE(_X86_)
         ;;
     alpha)
@@ -1419,23 +1501,17 @@ mips-sony-newsos*)
 *-openvms*)
     AC_DEFINE(XP_UNIX)
     AC_DEFINE(VMS)
-    AC_DEFINE(VMS_AS_IS)
-    AC_DEFINE(_SOCKADDR_LEN)
-    AC_DEFINE(GENERIC_PTHREAD_REDEFINES)
+    AC_DEFINE(PR_GETIPNODE_NOT_THREADSAFE)
     RESOLVE_LINK_SYMBOLS=1
-    CROSS_COMPILE=1
-    _HAVE_PTHREADS=1
-    HOST_CC=c89
-    HOST_CXX=cxx
-    HOST_CFLAGS=-O
-    HOST_CXXFLAGS=-O
-    CC=ccc
-    CXX=ccc
-    CFLAGS="$CFLAGS -Wc,names=\(short,as\)"
-    CXXFLAGS="$CXXFLAGS -Wc,names=\(short,as\)"
+    AR_FLAGS='c $@'
     MDCPUCFG_H=_openvms.cfg
     PR_MD_CSRCS=openvms.c
-    MKSHLIB='vmsld $(OPTIMIZER)'
+    DSO_LDOPTS='-shared -auto_symvec $(LDFLAGS)'
+    if test -n "$MOZ_DEBUG"; then
+      DSO_LDOPTS="$DSO_LDOPTS $_DEBUG_FLAGS"
+    else
+      DSO_LDOPTS="$DSO_LDOPTS $_OPTIMIZE_FLAGS"
+    fi
     ;;
 
 *-osf*)
@@ -1443,7 +1519,11 @@ mips-sony-newsos*)
     AC_DEFINE(XP_UNIX)
     AC_DEFINE(OSF1)
     AC_DEFINE(_REENTRANT)
-    AC_CHECK_HEADER(machine/builtins.h, AC_DEFINE(OSF1_HAVE_MACHINE_BUILTINS_H))
+    # OSF1 and HPUX report the POLLHUP event for a socket when the
+    # shutdown(SHUT_WR) operation is called for the remote end, even though
+    # the socket is still writeable. Use select(), instead of poll(), to
+    # workaround this problem.
+    AC_DEFINE(_PR_POLL_WITH_SELECT)
 
     if echo "$OS_RELEASE" | egrep -c '(V2.0|V3.2)' 2>/dev/null ; then
         USE_NSPR_THREADS=1
@@ -1455,6 +1535,10 @@ mips-sony-newsos*)
             CC="$CC -readonly_strings"
         fi
         _OPTIMIZE_FLAGS="$_OPTIMIZE_FLAGS -Olimit 4000"
+        AC_CHECK_HEADER(machine/builtins.h, AC_DEFINE(OSF1_HAVE_MACHINE_BUILTINS_H))
+    else
+        CFLAGS="$CFLAGS -mieee"
+        CXXFLAGS="$CXXFLAGS -mieee"
     fi
 
     if echo $OS_RELEASE | egrep -c '(V2.0|V3.2)' 2>/dev/null; then
@@ -1573,11 +1657,18 @@ mips-sony-newsos*)
         MDCPUCFG_H=_solaris32.cfg
     fi
     PR_MD_CSRCS=solaris.c
-    DSO_LDOPTS='-G -h $(notdir $@)'
+    LD=/usr/ccs/bin/ld
+    MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
+    RESOLVE_LINK_SYMBOLS=1
     if test -n "$GNU_CC"; then
         DSO_CFLAGS=-fPIC
+        if `$CC -print-prog-name=ld` -v 2>&1 | grep -c GNU >/dev/null; then
+            GCC_USE_GNU_LD=1
+        fi
+        DSO_LDOPTS='-shared -Wl,-h,$(notdir $@),-z,combreloc,-z,defs' 
     else
         DSO_CFLAGS=-KPIC
+        DSO_LDOPTS='-G -h $(notdir $@) -z combreloc -z defs'
     fi
     if test -z "$GNU_AS"; then
         ASFLAGS="$ASFLAGS -Wa,-P"
@@ -1590,12 +1681,13 @@ mips-sony-newsos*)
             CXXFLAGS="$CXXFLAGS -MDupdate \$(DEPENDENCIES)"
         fi
     else
-        CC="$CC -xstrconst"
-        CXX="$CXX -Qoption cg -xstrconst"
+        CFLAGS="$CFLAGS -xstrconst"
+        CXXFLAGS="$CXXFLAGS -Qoption cg -xstrconst"
         if test -z "$MOZ_OPTIMIZE"; then
             CFLAGS="$CFLAGS -xs"
             CXXFLAGS="$CXXFLAGS -xs"
         fi
+        _OPTIMIZE_FLAGS=-xO4
     fi
     if test -n "$USE_64" && test -z "$GNU_CC"; then
         CC="$CC -xarch=v9"
@@ -1643,11 +1735,14 @@ mips-sony-newsos*)
         # 64-bit Solaris requires SPARC V9 architecture, so the following
         # is not needed.
         if test -z "$USE_64"; then
-            ULTRASPARC_LIBRARY=ultrasparc
-            ULTRASPARC_FILTER_LIBRARY=libatomic.so
-            DSO_LDOPTS="$DSO_LDOPTS -f "'$(ULTRASPARC_FILTER_LIBRARY)'
+            ULTRASPARC_LIBRARY=nspr_flt
         fi
     fi
+    # Purify requires that binaries linked against nspr also
+    # be linked against -lrt (or -lposix4) so add it to OS_LIBS
+    _rev=`uname -r`
+    _librt=`echo $_rev 5.6 | awk '{ if ($1 > $2) print "-lrt"; else print "-lposix4" }'`
+    OS_LIBS="$OS_LIBS $_librt"
     ;;
 
 *-sco-sysv5*)
@@ -1674,14 +1769,11 @@ mips-sony-newsos*)
 
 *-os2*)
     AC_DEFINE(XP_OS2)
-    AC_DEFINE(BSD_SELECT)
     AC_DEFINE(XP_PC)
+    AC_DEFINE(BSD_SELECT)
     AC_DEFINE(_PR_GLOBAL_THREADS_ONLY)
-    OBJ_SUFFIX=obj
     LIB_SUFFIX=lib
     DLL_SUFFIX=dll
-    ASM_SUFFIX=asm
-    DLLTOOL=''
     RC=rc.exe
     PR_MD_ARCH_DIR=os2
     PROG_SUFFIX=.exe
@@ -1690,40 +1782,43 @@ mips-sony-newsos*)
     RESOLVE_LINK_SYMBOLS=1
 
     # EMX/GCC build
-    if test "$GNU_CC"; then
+    if test -n "$GNU_CC"; then
         AC_DEFINE(XP_OS2_EMX)
         AC_DEFINE(OS2)
         AR=emxomfar
         AR_FLAGS='-p256 r $@'
-        CFLAGS="-Zmtd -Zomf"
-        HOST_CFLAGS="$CFLAGS"
-        CXXFLAGS="-Zmtd -Zomf"
-        OS_LIBS="-lsocket -lemxio"
-        LD='$(CC)'
-        IMPLIB='emximp -o'
-        FILTER='emxexp'
-        OS_DLLFLAGS='$(DSO_LDOPTS) -o $@'
-        _OPTIMIZE_FLAGS=-O3
-        _DEBUG_FLAGS=-g
-        if test -n "$MOZ_DEBUG"; then
-          DLLFLAGS='-g'
-          EXEFLAGS='-g $(OMF_FLAG) -Zmtd -L$(DIST)/lib -o $@'
-          DSO_LDOPTS='-g -Zomf -Zdll -Zmt -Zcrtdll -Zlinker /NOO'
-        else
-          DLLFLAGS=
-          EXEFLAGS='-Zmtd -o $@'
-          DSO_LDOPTS='-Zomf -Zdll -Zmt -Zcrtdll -Zlinker /NOO'
+        CFLAGS="$CFLAGS -Wall -Zmtd -Zomf"
+        CXXFLAGS="$CFLAGS -Wall -Zmtd -Zomf"
+        MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
+        DSO_CFLAGS=
+        DSO_LDOPTS='-Zomf -Zdll -Zmtd'
+        _OPTIMIZE_FLAGS="-O2 -s"
+        _DEBUG_FLAGS="-g -fno-inline"
+        if test -n "$MOZ_OPTIMIZE"; then
+          DSO_LDOPTS="$DSO_LDOPTS -Zlinker /EXEPACK:2 -Zlinker /PACKCODE -Zlinker /PACKDATA"
         fi
-    fi
-    
+        OS_LIBS="-lsocket -lemxio"
+        IMPLIB='emximp -o'
+        FILTER='emxexp -o'
+
+        if test -z "$EMXOMFLD_LINKER"; then
+          # using LINK386.EXE
+          DSO_LDOPTS="$DSO_LDOPTS -Zlinker /NOO"
+        fi
+
+        # GCC for OS/2 currently predefines these, but we don't want them
+        DEFINES="$DEFINES -Uunix -U__unix -U__unix__"
+
     # Visual Age C++ build
-    if test "$VACPP" = "yes"; then
+    elif test "$VACPP" = "yes"; then
         AC_DEFINE(XP_OS2_VACPP)
         AC_DEFINE(OS2,4)
         AC_DEFINE(TCPV40HDRS)
         AC_DEFINE(_X86_)
+        OBJ_SUFFIX=obj
         AS=alp
         ASFLAGS='-Mb'
+        ASM_SUFFIX=asm
         AR=-ilib
         AR_FLAGS='/NOL /NOI /O:$(subst /,\\,$@)'
         CFLAGS='/Q /qlibansi /Gd+ /Gm+ /Su4 /Mp /Tl9'
@@ -1736,7 +1831,7 @@ mips-sony-newsos*)
         MKSHLIB='$(LD) $(DSO_LDOPTS)'
         IMPLIB='implib -nologo -noignorecase'
         FILTER='cppfilt -q -B -P'
-        _OPTIMIZE_FLAGS='/O+ /Gl+ /Gx+ /qtune=pentium /qarch=pentium'
+        _OPTIMIZE_FLAGS='/O+ /Gl+ /qtune=pentium /qarch=pentium'
         _DEBUG_FLAGS='/Ti+ '
         LDFLAGS='/NOL /M /L'
         DLLFLAGS='/O:$@ /DLL /INC:_dllentry /MAP:$(@:.dll=.map) /L /NOL'
@@ -1847,6 +1942,38 @@ AC_ARG_ENABLE(strip,
 [  --enable-strip          Enable stripping of shared libs and programs],
   [ ENABLE_STRIP=1 ])
 
+dnl Check for hpux options
+case "${target_os}" in
+hpux*)
+if test -z "$GNU_CC"; then
+
+    AC_CACHE_CHECK(for +Olit support,
+        ac_cv_hpux_usable_olit_option,
+        dnl since aCC doesn't throw an error on invalid options,
+        dnl we have to test this the hard way
+        [ac_cv_hpux_usable_olit_option=no
+        rm -f conftest*
+        echo 'int main() { return 0; }' | cat > conftest.c
+        ${CC-cc} ${CFLAGS} +Olit=all -o conftest conftest.c > conftest.out 2>&1
+        if test $? -eq 0; then
+            if test -z "`egrep -i '(unrecognize|unknown)' conftest.out`"; then
+                ac_cv_hpux_usable_olit_option=yes
+            fi
+        fi
+        rm -f conftest*
+        ])
+
+    if test "$ac_cv_hpux_usable_olit_option" = "yes"; then
+        CFLAGS="$CFLAGS +Olit=all"
+        CXXFLAGS="$CXXFLAGS +Olit=all"
+    else
+        CFLAGS="$CFLAGS +ESlit"
+        CXXFLAGS="$CXXFLAGS +ESlit"
+    fi
+fi
+;;
+esac
+
 dnl
 dnl Apparently, some systems cannot properly check for the pthread
 dnl library unless <pthread.h> is included so we need to test
@@ -1858,13 +1985,13 @@ AC_DEFUN(MOZ_CHECK_PTHREADS,
 AC_MSG_CHECKING([for pthread_create in -l$1])
 echo "
     #include <pthread.h> 
-    void *foo(void *v) { int a = 1;  } 
+    void *foo(void *v) { return v; } 
     int main() { 
         pthread_t t;
         if (!pthread_create(&t, 0, &foo, 0)) {
             pthread_join(t, 0);
         }
-        exit(0);
+        return 0;
     }" > dummy.c ;
     echo "${CC-cc} -o dummy${ac_exeext} dummy.c $CFLAGS $CPPFLAGS -l[$1] $LDFLAGS $LIBS" 1>&5;
     ${CC-cc} -o dummy${ac_exeext} dummy.c $CFLAGS $CPPFLAGS -l[$1] $LDFLAGS $LIBS 2>&5;
@@ -1906,7 +2033,7 @@ AC_ARG_WITH(pthreads,
 	    USE_PTHREADS=
 	    _PTHREAD_LDFLAGS=
 	  fi],
-	[ if test -n "$_HAVE_PTHREADS" && test -z "$USE_USER_PTHREADS" && test -z "$USER_NSPR_THREADS"; then
+	[ if test -n "$_HAVE_PTHREADS" && test -z "$USE_USER_PTHREADS" && test -z "$USE_NSPR_THREADS"; then
 	    USE_PTHREADS=1
 	    USE_USER_PTHREADS=
 	    USE_NSPR_THREADS=
@@ -1966,6 +2093,8 @@ AC_ARG_ENABLE(ipv6,
     [  --enable-ipv6           Compile ipv6 support],
     [ if test "$enableval" = "yes"; then
 	    USE_IPV6=1
+      else
+	    USE_IPV6=
       fi])
 
 
@@ -1986,8 +2115,15 @@ if test -n "$USE_PTHREADS"; then
    if test $? -eq 0; then
 	if test -z "`egrep -i '(unrecognize|unknown)' conftest.out | grep pthread`" && test -z "`egrep -i '(error|incorrect)' conftest.out`" ; then
 	    ac_cv_have_dash_pthread=yes
-	    CFLAGS="$CFLAGS -pthread"
-	    CXXFLAGS="$CXXFLAGS -pthread"
+		case "$target_os" in
+	    freebsd*)
+# Freebsd doesn't use -pthread for compiles, it uses them for linking
+            ;;
+	    *)
+            CFLAGS="$CFLAGS -pthread"
+            CXXFLAGS="$CXXFLAGS -pthread"
+            ;;
+        esac
 	fi
     fi
     rm -f conftest*
@@ -2018,7 +2154,17 @@ if test -n "$USE_PTHREADS"; then
             _PTHREAD_LDFLAGS=
         fi
 	    ;;
-    *-freebsd*|*-openbsd*|*-bsdi*|*-netbsd*)
+    *-freebsd*)
+	    AC_DEFINE(_REENTRANT)
+	    AC_DEFINE(_THREAD_SAFE)
+	    dnl -pthread links in -lc_r, so don't specify it explicitly.
+	    if test "$ac_cv_have_dash_pthread" = "yes"; then
+	        _PTHREAD_LDFLAGS="-pthread"
+	    else
+	        _PTHREAD_LDFLAGS="-lc_r"
+	    fi
+	    ;;
+    *-openbsd*|*-bsdi*|*-netbsd*)
 	    AC_DEFINE(_THREAD_SAFE)
 	    dnl -pthread links in -lc_r, so don't specify it explicitly.
 	    if test "$ac_cv_have_dash_pthread" = "yes"; then
@@ -2057,6 +2203,14 @@ case "$target" in
         fi
         ;;
     aix4.3*)
+        if test -z "$USE_NSPR_THREADS"; then
+            AC_DEFINE(HAVE_POINTER_LOCALTIME_R)
+        fi
+        if test -n "$USE_PTHREADS"; then
+            AC_DEFINE(_PR_HAVE_THREADSAFE_GETHOST)
+        fi
+        ;;
+    *)
         if test -z "$USE_NSPR_THREADS"; then
             AC_DEFINE(HAVE_POINTER_LOCALTIME_R)
         fi
@@ -2106,13 +2260,13 @@ case "$target" in
         AC_DEFINE(_PR_LOCAL_THREADS_ONLY)
     fi
     ;;
-*-mingw*|*-cygwin*|*-msvc*|*-mksnt*)
+*-mingw*|*-cygwin*|*-msvc*|*-mks*)
     dnl win32 does not use pthreads
     USE_PTHREADS=
     _PTHREAD_LDFLAGS=
     USE_USER_PTHREADS=
     ;;
-*-netbsd*)
+*-netbsd*|*-openbsd*)
     if test -n "$USE_NSPR_THREADS"; then
         AC_DEFINE(_PR_LOCAL_THREADS_ONLY)
     fi
@@ -2189,6 +2343,17 @@ fi
 RELEASE_OBJDIR_NAME="${OS_CONFIG}${CPU_ARCH_TAG}${COMPILER_TAG}${IMPL_STRATEGY}${OBJDIR_TAG}.${OBJDIR_SUFFIX}"
 
 dnl ========================================================
+dnl Use cygwin wrapper for win32 builds
+dnl ========================================================
+case "$target_os" in
+mingw*|cygwin*|msvc*|mks*)
+    CC="\$(CYGWIN_WRAPPER) $CC"
+    CXX="\$(CYGWIN_WRAPPER) $CXX"
+    RC="\$(CYGWIN_WRAPPER) $RC"
+    ;;
+esac
+
+dnl ========================================================
 dnl Substitution of found variables.
 dnl ========================================================
 AC_SUBST(SHELL_OVERRIDE)
@@ -2203,6 +2368,7 @@ AC_SUBST(HOST_CC)
 AC_SUBST(HOST_CFLAGS)
 AC_SUBST(LDFLAGS)
 AC_SUBST(GNU_CC)
+AC_SUBST(GCC_USE_GNU_LD)
 AC_SUBST(CROSS_COMPILE)
 
 AC_SUBST(MOZ_OPTIMIZE)
@@ -2226,7 +2392,7 @@ AC_SUBST(LIBPLC)
 
 AC_SUBST(MOD_MAJOR_VERSION)
 AC_SUBST(MOD_MINOR_VERSION)
-AC_SUBST(MOD_REVISION_VERSION)
+AC_SUBST(MOD_PATCH_VERSION)
 AC_SUBST(NSPR_MODNAME)
 AC_SUBST(MDCPUCFG_H)
 AC_SUBST(PR_MD_CSRCS)
@@ -2246,6 +2412,7 @@ AC_SUBST(OS_TARGET)
 AC_SUBST(OS_ARCH)
 AC_SUBST(OS_RELEASE)
 AC_SUBST(OS_TEST)
+AC_SUBST(MACOS_DEPLOYMENT_TARGET)
 
 AC_SUBST(DEFINES)
 AC_SUBST(DEFS)
@@ -2254,8 +2421,6 @@ AC_SUBST(AR_FLAGS)
 AC_SUBST(AS)
 AC_SUBST(ASFLAGS)
 AC_SUBST(LD)
-AC_SUBST(DLLTOOL)
-AC_SUBST(WINDRES)
 AC_SUBST(RANLIB)
 AC_SUBST(PERL)
 AC_SUBST(STRIP)
@@ -2268,7 +2433,6 @@ AC_SUBST(AIX_LINK_OPTS)
 AC_SUBST(NOSUCHFILE)
 AC_SUBST(MOZ_OBJFORMAT)
 AC_SUBST(ULTRASPARC_LIBRARY)
-AC_SUBST(ULTRASPARC_FILTER_LIBRARY)
 
 AC_SUBST(OBJDIR)
 AC_SUBST(OBJDIR_NAME)
@@ -2276,9 +2440,11 @@ AC_SUBST(RELEASE_OBJDIR_NAME)
 AC_SUBST(NSINSTALL)
 AC_SUBST(OPTIMIZER)
 AC_SUBST(RC)
+AC_SUBST(RCFLAGS)
 AC_SUBST(DLLFLAGS)
 AC_SUBST(EXEFLAGS)
 AC_SUBST(OS_DLLFLAGS)
+AC_SUBST(CYGWIN_WRAPPER)
 
 dnl ========================================================
 dnl Generate output files.
@@ -2296,6 +2462,11 @@ lib/libc/Makefile
 lib/libc/include/Makefile 
 lib/libc/src/Makefile 
 lib/tests/Makefile
+pkg/Makefile
+pkg/linux/Makefile
+pkg/solaris/Makefile
+pkg/solaris/SUNWpr/Makefile
+pkg/solaris/SUNWprx/Makefile
 pr/Makefile 
 pr/include/Makefile 
 pr/include/md/Makefile 

@@ -51,6 +51,10 @@
  * Internal configuration macros
  */
 
+#ifdef BONE_VERSION
+#define _PR_HAVE_SOCKADDR_LEN
+#endif
+
 #define PR_LINKER_ARCH	"beos"
 #define _PR_SI_SYSNAME  "BEOS"
 #ifdef __powerpc__
@@ -87,6 +91,7 @@
 #define _PR_HAVE_PEEK_BUFFER
 #define _PR_PEEK_BUFFER_MAX (16 * 1024)
 #define _PR_FD_NEED_EMULATE_MSG_PEEK(fd) 1
+#define _PR_CONNECT_DOES_NOT_BIND
 
 /* Define threading functions and objects as native BeOS */
 struct _MDThread {
@@ -141,17 +146,21 @@ struct _MDSegment {
 ** File- and directory-related definitions
 */
 
+#ifndef BONE_VERSION
 #define BE_SOCK_SHUTDOWN_READ	0x01
 #define BE_SOCK_SHUTDOWN_WRITE	0x02
+#endif
 
 struct _MDFileDesc {
     PRInt32	osfd;
     PRInt32	sock_state;
     PRBool	accepted_socket;
     PRNetAddr	peer_addr;
+#ifndef BONE_VERSION
     PRBool	connectValueValid;
     int		connectReturnValue;
     int		connectReturnError;
+#endif
 };
 
 struct _MDDir {
@@ -175,14 +184,17 @@ struct _MDFileMap {
  * Network related definitions.
  */
 
+#ifndef BONE_VERSION
 #define IPPROTO_IP 0
 #define AF_UNIX 2
 #define TCP_NODELAY SO_NONBLOCK
 #define SO_LINGER -1
 #define SO_ERROR 4
+#endif
 
 #define _PR_INTERRUPT_CHECK_INTERVAL_SECS 5
 
+#ifndef BONE_VERSION
 /* these aren't actually used. if they are, we're screwed */
 struct  protoent {
     char    *p_name;        /* official protocol name */
@@ -192,6 +204,7 @@ struct  protoent {
 
 struct protoent* getprotobyname(const char* name);
 struct protoent* getprotobynumber(int number);
+#endif
 
 /*
  * malloc() related definitions.
@@ -304,6 +317,7 @@ struct protoent* getprotobynumber(int number);
 #define _MD_READ_DIR _MD_read_dir
 #define _MD_CLOSE_DIR _MD_close_dir
 #define _MD_MAKE_NONBLOCK _MD_make_nonblock
+#define _MD_SET_FD_INHERITABLE _MD_set_fd_inheritable
 #define _MD_INIT_FD_INHERITABLE _MD_init_fd_inheritable
 #define _MD_QUERY_FD_INHERITABLE _MD_query_fd_inheritable
 #define _MD_OPEN _MD_open
@@ -509,7 +523,7 @@ NSPR_API(PRInt32) _MD_open(const char *name, PRIntn osflags, PRIntn mode);
 NSPR_API(PRInt32) _MD_close_file(PRInt32 osfd);
 NSPR_API(PRInt32) _MD_read(PRFileDesc *fd, void *buf, PRInt32 amount);
 NSPR_API(PRInt32) _MD_write(PRFileDesc *fd, const void *buf, PRInt32 amount);
-NSPR_API(PRInt32) _MD_writev(PRFileDesc *fd, struct PRIOVec *iov, PRInt32 iov_size, PRIntervalTime timeout);
+NSPR_API(PRInt32) _MD_writev(PRFileDesc *fd, const PRIOVec *iov, PRInt32 iov_size, PRIntervalTime timeout);
 NSPR_API(PRInt32) _MD_lseek(PRFileDesc *fd, PRInt32 offset, int whence);
 NSPR_API(PRInt64) _MD_lseek64(PRFileDesc *fd, PRInt64 offset, int whence);
 NSPR_API(PRInt32) _MD_fsync(PRFileDesc *fd);
