@@ -203,7 +203,7 @@ static PRStatus PR_CALLBACK PipeSync(PRFileDesc *fd)
 	return PR_SUCCESS;
 }
 
-static PRStatus PR_CALLBACK FileInfo(PRFileDesc *fd, PRFileInfo *info)
+static PRStatus PR_CALLBACK FileGetInfo(PRFileDesc *fd, PRFileInfo *info)
 {
 	PRInt32 rv;
 
@@ -214,7 +214,7 @@ static PRStatus PR_CALLBACK FileInfo(PRFileDesc *fd, PRFileInfo *info)
 	return PR_SUCCESS;
 }
 
-static PRStatus PR_CALLBACK FileInfo64(PRFileDesc *fd, PRFileInfo64 *info)
+static PRStatus PR_CALLBACK FileGetInfo64(PRFileDesc *fd, PRFileInfo64 *info)
 {
 #ifdef XP_MAC
 #pragma unused( fd, info )
@@ -276,8 +276,8 @@ static PRIOMethods _pr_fileMethods = {
     FileSync,
     FileSeek,
     FileSeek64,
-    FileInfo,
-    FileInfo64,
+    FileGetInfo,
+    FileGetInfo64,
     (PRWritevFN)_PR_InvalidInt,		
     (PRConnectFN)_PR_InvalidStatus,		
     (PRAcceptFN)_PR_InvalidDesc,		
@@ -735,7 +735,7 @@ PR_IMPLEMENT(PRStatus) PR_CreatePipe(
     (*readPipe)->secret->inheritable = _PR_TRI_TRUE;
     (*writePipe)->secret->inheritable = _PR_TRI_TRUE;
     return PR_SUCCESS;
-#elif defined(XP_UNIX) || defined(XP_OS2)
+#elif defined(XP_UNIX) || defined(XP_OS2) || defined(XP_BEOS)
 #ifdef XP_OS2
     HFILE pipefd[2];
 #else
@@ -765,9 +765,13 @@ PR_IMPLEMENT(PRStatus) PR_CreatePipe(
         close(pipefd[1]);
         return PR_FAILURE;
     }
-    _MD_MakeNonblock(*readPipe);
+#ifndef XP_BEOS /* Pipes are nonblocking on BeOS */
+    _PR_MD_MAKE_NONBLOCK(*readPipe);
+#endif
     _PR_MD_INIT_FD_INHERITABLE(*readPipe, PR_FALSE);
-    _MD_MakeNonblock(*writePipe);
+#ifndef XP_BEOS /* Pipes are nonblocking on BeOS */
+    _PR_MD_MAKE_NONBLOCK(*writePipe);
+#endif
     _PR_MD_INIT_FD_INHERITABLE(*writePipe, PR_FALSE);
     return PR_SUCCESS;
 #else

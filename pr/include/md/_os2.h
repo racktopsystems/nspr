@@ -47,6 +47,31 @@
 
 #include <errno.h>
 
+#define USE_RAMSEM
+
+#ifdef USE_RAMSEM
+#pragma pack(4)
+
+#pragma pack(2)
+typedef struct _RAMSEM
+{
+   ULONG   ulTIDPID;
+   ULONG   hevSem;
+   ULONG   cLocks;
+   USHORT  cWaiting;
+   USHORT  cPosts;
+} RAMSEM, *PRAMSEM;
+
+typedef struct _CRITICAL_SECTION
+{
+    ULONG ulReserved[4]; /* Same size as RAMSEM */
+} CRITICAL_SECTION, *PCRITICAL_SECTION, *LPCRITICAL_SECTION;
+#pragma pack(4)
+
+APIRET _Optlink SemRequest486(PRAMSEM, ULONG);
+APIRET _Optlink SemReleasex86(PRAMSEM, ULONG);
+#endif
+
 #ifdef XP_OS2_EMX
 /*
  * EMX-specific tweaks:
@@ -162,7 +187,11 @@ struct _MDNotified {
 };
 
 struct _MDLock {
-    HMTX mutex;          /* this is recursive on NT */
+#ifdef USE_RAMSEM
+    CRITICAL_SECTION mutex;            /* this is recursive on NT */
+#else
+    HMTX mutex;                        /* this is recursive on NT */
+#endif
 
     /*
      * When notifying cvars, there is no point in actually
@@ -258,7 +287,7 @@ extern void _MD_MakeNonblock(PRFileDesc *f);
 #define _MD_INIT_FD_INHERITABLE       (_PR_MD_INIT_FD_INHERITABLE)
 #define _MD_QUERY_FD_INHERITABLE      (_PR_MD_QUERY_FD_INHERITABLE)
 #define _MD_SHUTDOWN                  (_PR_MD_SHUTDOWN)
-#define _MD_LISTEN(s, backlog)        listen(s->secret->md.osfd,backlog)
+#define _MD_LISTEN                    _PR_MD_LISTEN
 extern PRInt32 _MD_CloseSocket(PRInt32 osfd);
 #define _MD_CLOSE_SOCKET              _MD_CloseSocket
 #define _MD_SENDTO                    (_PR_MD_SENDTO)
@@ -349,11 +378,33 @@ extern PRInt32 _MD_Accept(PRFileDesc *fd, PRNetAddr *raddr, PRUint32 *rlen,
 #define _PR_LOCK                      _MD_LOCK
 #define _PR_UNLOCK					  _MD_UNLOCK
 
+#ifdef USE_RAMSEM
 #define _MD_NEW_LOCK                  (_PR_MD_NEW_LOCK)
-#define _MD_FREE_LOCK                 (_PR_MD_FREE_LOCK)
-#define _MD_LOCK                      (_PR_MD_LOCK)
-#define _MD_TEST_AND_LOCK             (_PR_MD_TEST_AND_LOCK)
-#define _MD_UNLOCK                    (_PR_MD_UNLOCK)
+#define _MD_FREE_LOCK(lock)           (DosCloseEventSem(((PRAMSEM)(&((lock)->mutex)))->hevSem))
+#define _MD_LOCK(lock)                (SemRequest486(&((lock)->mutex), -1))
+#define _MD_TEST_AND_LOCK(lock)       (SemRequest486(&((lock)->mutex), -1),0)
+#define _MD_UNLOCK(lock)              \
+    PR_BEGIN_MACRO \
+    if (0 != (lock)->notified.length) { \
+        md_UnlockAndPostNotifies((lock), NULL, NULL); \
+    } else { \
+        SemReleasex86( &(lock)->mutex, 0 ); \
+    } \
+    PR_END_MACRO
+#else
+#define _MD_NEW_LOCK                  (_PR_MD_NEW_LOCK)
+#define _MD_FREE_LOCK(lock)           (DosCloseMutexSem((lock)->mutex))
+#define _MD_LOCK(lock)                (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT))
+#define _MD_TEST_AND_LOCK(lock)       (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT),0)
+#define _MD_UNLOCK(lock)              \
+    PR_BEGIN_MACRO \
+    if (0 != (lock)->notified.length) { \
+        md_UnlockAndPostNotifies((lock), NULL, NULL); \
+    } else { \
+        DosReleaseMutexSem((lock)->mutex); \
+    } \
+    PR_END_MACRO
+#endif
 
 /* --- lock and cv waiting --- */
 #define _MD_WAIT                      (_PR_MD_WAIT)
@@ -537,4 +588,6 @@ unsigned long _System _DLL_InitTerm( unsigned long mod_handle, unsigned long fla
 #define FreeLibrary(x) DosFreeModule((HMODULE)x)
 #define OutputDebugString(x)
                                
+extern int _MD_os2_get_nonblocking_connect_error(int osfd);
+
 #endif /* nspr_os2_defs_h___ */

@@ -514,6 +514,7 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
     struct timeval tv;
     PRThread *me = _PR_MD_CURRENT_THREAD();
     PRIntervalTime epoch, now, elapsed, remaining;
+    PRBool wait_for_remaining;
     PRInt32 syserror;
     fd_set rd_wr;
 
@@ -558,8 +559,10 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
                  * so that there is an upper limit on the delay
                  * before the interrupt bit is checked.
                  */
+                wait_for_remaining = PR_TRUE;
                 tv.tv_sec = PR_IntervalToSeconds(remaining);
                 if (tv.tv_sec > _PR_INTERRUPT_CHECK_INTERVAL_SECS) {
+                    wait_for_remaining = PR_FALSE;
                     tv.tv_sec = _PR_INTERRUPT_CHECK_INTERVAL_SECS;
                     tv.tv_usec = 0;
                 } else {
@@ -596,8 +599,12 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
                      * PR_IntervalNow() call.
                      */
                     if (rv == 0) {
-                        now += PR_SecondsToInterval(tv.tv_sec)
-                            + PR_MicrosecondsToInterval(tv.tv_usec);
+                        if (wait_for_remaining) {
+                            now += remaining;
+                        } else {
+                            now += PR_SecondsToInterval(tv.tv_sec)
+                                + PR_MicrosecondsToInterval(tv.tv_usec);
+                        }
                     } else {
                         now = PR_IntervalNow();
                     }
@@ -625,6 +632,7 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
     int msecs;
     PRThread *me = _PR_MD_CURRENT_THREAD();
     PRIntervalTime epoch, now, elapsed, remaining;
+    PRBool wait_for_remaining;
     PRInt32 syserror;
     struct pollfd pfd;
 
@@ -682,8 +690,10 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
                  * so that there is an upper limit on the delay
                  * before the interrupt bit is checked.
                  */
+                wait_for_remaining = PR_TRUE;
                 msecs = PR_IntervalToMilliseconds(remaining);
                 if (msecs > _PR_INTERRUPT_CHECK_INTERVAL_SECS * 1000) {
+                    wait_for_remaining = PR_FALSE;
                     msecs = _PR_INTERRUPT_CHECK_INTERVAL_SECS * 1000;
                 }
                 rv = _MD_POLL(&pfd, 1, msecs);
@@ -719,7 +729,11 @@ static PRInt32 socket_io_wait(PRInt32 osfd, PRInt32 fd_type,
                      * PR_IntervalNow() call.
                      */
                     if (rv == 0) {
-                        now += PR_MillisecondsToInterval(msecs);
+                        if (wait_for_remaining) {
+                            now += remaining;
+                        } else {
+                            now += PR_MillisecondsToInterval(msecs);
+                        }
                     } else {
                         now = PR_IntervalNow();
                     }
@@ -2713,6 +2727,28 @@ static void* _MD_Unix_mmap64(
 }  /* _MD_Unix_mmap64 */
 #endif /* defined(_PR_NO_LARGE_FILES) || defined(SOLARIS2_5) */
 
+#if defined(OSF1) && defined(__GNUC__)
+
+/*
+ * On OSF1 V5.0A, <sys/stat.h> defines stat and fstat as
+ * macros when compiled under gcc, so it is rather tricky to
+ * take the addresses of the real functions the macros expend
+ * to.  A simple solution is to define forwarder functions
+ * and take the addresses of the forwarder functions instead.
+ */
+
+static int stat_forwarder(const char *path, struct stat *buffer)
+{
+    return stat(path, buffer);
+}
+
+static int fstat_forwarder(int filedes, struct stat *buffer)
+{
+    return fstat(filedes, buffer);
+}
+
+#endif
+
 static void _PR_InitIOV(void)
 {
 #if defined(SOLARIS2_5)
@@ -2757,8 +2793,13 @@ static void _PR_InitIOV(void)
 #elif defined(_PR_HAVE_LARGE_OFF_T)
     _md_iovector._open64 = open;
     _md_iovector._mmap64 = mmap;
+#if defined(OSF1) && defined(__GNUC__)
+    _md_iovector._fstat64 = fstat_forwarder;
+    _md_iovector._stat64 = stat_forwarder;
+#else
     _md_iovector._fstat64 = fstat;
     _md_iovector._stat64 = stat;
+#endif
     _md_iovector._lseek64 = lseek;
 #else
 #error "I don't know yet"
@@ -3220,9 +3261,6 @@ int _MD_unix_get_nonblocking_connect_error(int osfd)
 
             int err;
             _PRSockLen_t optlen = sizeof(err);
-
-            printf("_MD_unix_get_nonblocking_connect_error: "
-                    "Assuming Large TCP/IP Stack -REVISIT- Never Tested!\n");
 
             if (getsockopt(osfd, SOL_SOCKET, SO_ERROR,
                     (char *) &err, &optlen) == -1) {
