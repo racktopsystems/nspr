@@ -46,6 +46,7 @@
 #define _PR_VMBASE		0x30000000
 #define _PR_STACK_VMBASE	0x50000000
 #define _MD_DEFAULT_STACK_SIZE	65536L
+#define _MD_MINIMUM_STACK_SIZE	131072L
 #define _MD_MMAP_FLAGS		MAP_PRIVATE
 
 #ifndef	HAVE_WEAK_IO_SYMBOLS
@@ -211,5 +212,7 @@ struct _MDCPU {
 ** unwrapped version.
 */
 #define _MD_SELECT		select
+
+#define SA_RESTART 0
 
 #endif /* nspr_nto_defs_h___ */

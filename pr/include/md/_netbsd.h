@@ -80,7 +80,9 @@
 
 #if __NetBSD_Version__ >= 105000000
 #define _PR_INET6
+#define _PR_HAVE_INET_NTOP
 #define _PR_HAVE_GETHOSTBYNAME2
+#define _PR_HAVE_GETADDRINFO
 #define _PR_INET6_PROBE
 #endif
 

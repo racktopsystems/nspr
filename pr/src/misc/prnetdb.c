@@ -83,6 +83,12 @@ PRLock *_pr_dnsLock = NULL;
  * Some return a pointer to struct protoent, others return
  * an int.
  */
+#if defined(XP_BEOS) && defined(BONE_VERSION)
+#include <arpa/inet.h>  /* pick up define for inet_addr */
+#include <sys/socket.h>
+#define _PR_HAVE_GETPROTO_R
+#define _PR_HAVE_GETPROTO_R_POINTER
+#endif
 
 #if defined(SOLARIS) || (defined(BSDI) && defined(_REENTRANT)) \
 	|| (defined(LINUX) && defined(_REENTRANT) \
@@ -92,7 +98,7 @@ PRLock *_pr_dnsLock = NULL;
 #endif
 
 #if defined(OSF1) \
-        || defined(AIX4_3) || (defined(AIX) && defined(_THREAD_SAFE)) \
+        || defined(AIX4_3_PLUS) || (defined(AIX) && defined(_THREAD_SAFE)) \
 	|| (defined(HPUX10_10) && defined(_REENTRANT)) \
         || (defined(HPUX10_20) && defined(_REENTRANT))
 #define _PR_HAVE_GETPROTO_R
@@ -157,6 +163,250 @@ const PRIPv6Addr _pr_in6addr_loopback = {{{ 0, 0, 0, 0,
 
 #define _PR_IN6_V4MAPPED_TO_IPADDR(a) ((a)->pr_s6_addr32[3])
 
+#if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
+
+/*
+ * The _pr_QueryNetIfs() function finds out if the system has
+ * IPv4 or IPv6 source addresses configured and sets _pr_have_inet_if
+ * and _pr_have_inet6_if accordingly.
+ *
+ * We have an implementation using SIOCGIFCONF ioctl and a
+ * default implementation that simply sets _pr_have_inet_if
+ * and _pr_have_inet6_if to true.  A better implementation
+ * would be to use the routing sockets (see Chapter 17 of
+ * W. Richard Stevens' Unix Network Programming, Vol. 1, 2nd. Ed.)
+ */
+
+static PRLock *_pr_query_ifs_lock = NULL;
+static PRBool _pr_have_inet_if = PR_FALSE;
+static PRBool _pr_have_inet6_if = PR_FALSE;
+
+#undef DEBUG_QUERY_IFS
+
+#if defined(AIX) \
+    || (defined(DARWIN) && (!defined(HAVE_GETIFADDRS) \
+        || (defined(MACOS_DEPLOYMENT_TARGET) \
+        && MACOS_DEPLOYMENT_TARGET < 100200)))
+
+/*
+ * Use SIOCGIFCONF ioctl on platforms that don't have routing
+ * sockets.  Warning: whether SIOCGIFCONF ioctl returns AF_INET6
+ * network interfaces is not portable.
+ *
+ * The _pr_QueryNetIfs() function is derived from the code in
+ * src/lib/libc/net/getifaddrs.c in BSD Unix and the code in
+ * Section 16.6 of W. Richard Stevens' Unix Network Programming,
+ * Vol. 1, 2nd. Ed.
+ */
+
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <net/if.h>
+
+#ifdef DEBUG_QUERY_IFS
+static void
+_pr_PrintIfreq(struct ifreq *ifr)
+{
+    PRNetAddr addr;
+    struct sockaddr *sa;
+    const char* family;
+    char addrstr[64];
+
+    sa = &ifr->ifr_addr;
+    if (sa->sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+        family = "inet";
+        memcpy(&addr.inet.ip, &sin->sin_addr, sizeof(sin->sin_addr));
+    } else if (sa->sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
+        family = "inet6";
+        memcpy(&addr.ipv6.ip, &sin6->sin6_addr, sizeof(sin6->sin6_addr));
+    } else {
+        return;  /* skip if not AF_INET or AF_INET6 */
+    }
+    addr.raw.family = sa->sa_family;
+    PR_NetAddrToString(&addr, addrstr, sizeof(addrstr));
+    printf("%s: %s %s\n", ifr->ifr_name, family, addrstr);
+}
+#endif
+
+static void
+_pr_QueryNetIfs(void)
+{
+    int sock;
+    int rv;
+    struct ifconf ifc;
+    struct ifreq *ifr;
+    struct ifreq *lifr;
+    PRUint32 len, lastlen;
+    char *buf;
+
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        return;
+    }
+
+    /* Issue SIOCGIFCONF request in a loop. */
+    lastlen = 0;
+    len = 100 * sizeof(struct ifreq);  /* initial buffer size guess */
+    for (;;) {
+        buf = (char *)PR_Malloc(len);
+        if (NULL == buf) {
+            close(sock);
+            return;
+        }
+        ifc.ifc_buf = buf;
+        ifc.ifc_len = len;
+        rv = ioctl(sock, SIOCGIFCONF, &ifc);
+        if (rv < 0) {
+            if (errno != EINVAL || lastlen != 0) {
+                close(sock);
+                PR_Free(buf);
+                return;
+            }
+        } else {
+            if (ifc.ifc_len == lastlen)
+                break;  /* success, len has not changed */
+            lastlen = ifc.ifc_len;
+        }
+        len += 10 * sizeof(struct ifreq);  /* increment */
+        PR_Free(buf);
+    }
+    close(sock);
+
+    ifr = ifc.ifc_req;
+    lifr = (struct ifreq *)&ifc.ifc_buf[ifc.ifc_len];
+
+    while (ifr < lifr) {
+        struct sockaddr *sa;
+        int sa_len;
+
+#ifdef DEBUG_QUERY_IFS
+        _pr_PrintIfreq(ifr);
+#endif
+        sa = &ifr->ifr_addr;
+        if (sa->sa_family == AF_INET) {
+            struct sockaddr_in *sin = (struct sockaddr_in *) sa;
+            if (sin->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+                _pr_have_inet_if = PR_TRUE;
+            } 
+        } else if (sa->sa_family == AF_INET6) {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *) sa;
+            if (!IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)
+                    && !IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
+                _pr_have_inet6_if = PR_TRUE;
+            } 
+        }
+
+#ifdef _PR_HAVE_SOCKADDR_LEN
+        sa_len = PR_MAX(sa->sa_len, sizeof(struct sockaddr));
+#else
+        switch (sa->sa_family) {
+#ifdef AF_LINK
+        case AF_LINK:
+            sa_len = sizeof(struct sockaddr_dl);
+            break;
+#endif
+        case AF_INET6:
+            sa_len = sizeof(struct sockaddr_in6);
+            break;
+        default:
+            sa_len = sizeof(struct sockaddr);
+            break;
+        }
+#endif
+        ifr = (struct ifreq *)(((char *)sa) + sa_len);
+    }
+    PR_Free(buf);
+}
+
+#elif (defined(DARWIN) && defined(HAVE_GETIFADDRS)) || defined(FREEBSD) \
+    || defined(NETBSD) || defined(OPENBSD)
+
+/*
+ * Use the BSD getifaddrs function.
+ */
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+
+#ifdef DEBUG_QUERY_IFS
+static void
+_pr_PrintIfaddrs(struct ifaddrs *ifa)
+{
+    struct sockaddr *sa;
+    const char* family;
+    void *addrp;
+    char addrstr[64];
+
+    sa = ifa->ifa_addr;
+    if (sa->sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+        family = "inet";
+        addrp = &sin->sin_addr;
+    } else if (sa->sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
+        family = "inet6";
+        addrp = &sin6->sin6_addr;
+    } else {
+        return;  /* skip if not AF_INET or AF_INET6 */
+    }
+    inet_ntop(sa->sa_family, addrp, addrstr, sizeof(addrstr));
+    printf("%s: %s %s\n", ifa->ifa_name, family, addrstr);
+}
+#endif
+
+static void
+_pr_QueryNetIfs(void)
+{
+    struct ifaddrs *ifp;
+    struct ifaddrs *ifa;
+
+    if (getifaddrs(&ifp) == -1) {
+        return;
+    }
+    for (ifa = ifp; ifa; ifa = ifa->ifa_next) {
+        struct sockaddr *sa;
+
+#ifdef DEBUG_QUERY_IFS
+        _pr_PrintIfaddrs(ifa);
+#endif
+        sa = ifa->ifa_addr;
+        if (sa->sa_family == AF_INET) {
+            struct sockaddr_in *sin = (struct sockaddr_in *) sa;
+            if (sin->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+                _pr_have_inet_if = 1;
+            } 
+        } else if (sa->sa_family == AF_INET6) {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *) sa;
+            if (!IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)
+                    && !IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
+                _pr_have_inet6_if = 1;
+            } 
+        }
+    } 
+    freeifaddrs(ifp);
+}
+
+#else  /* default */
+
+/*
+ * Emulate the code in NSPR 4.2 or older.  PR_GetIPNodeByName behaves
+ * as if the system had both IPv4 and IPv6 source addresses configured.
+ */
+static void
+_pr_QueryNetIfs(void)
+{
+    _pr_have_inet_if = PR_TRUE;
+    _pr_have_inet6_if = PR_TRUE;
+}
+
+#endif
+
+#endif  /* _PR_INET6 && _PR_HAVE_GETHOSTBYNAME2 */
+
 void _PR_InitNet(void)
 {
 #if defined(XP_UNIX)
@@ -173,6 +423,31 @@ void _PR_InitNet(void)
 #endif
 #if !defined(_PR_HAVE_GETPROTO_R)
 	_getproto_lock = PR_NewLock();
+#endif
+#if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
+	_pr_query_ifs_lock = PR_NewLock();
+#endif
+}
+
+void _PR_CleanupNet(void)
+{
+#if !defined(_PR_NO_DNS_LOCK)
+    if (_pr_dnsLock) {
+        PR_DestroyLock(_pr_dnsLock);
+        _pr_dnsLock = NULL;
+    }
+#endif
+#if !defined(_PR_HAVE_GETPROTO_R)
+    if (_getproto_lock) {
+        PR_DestroyLock(_getproto_lock);
+        _getproto_lock = NULL;
+    }
+#endif
+#if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
+    if (_pr_query_ifs_lock) {
+        PR_DestroyLock(_pr_query_ifs_lock);
+        _pr_query_ifs_lock = NULL;
+    }
 #endif
 }
 
@@ -215,7 +490,6 @@ static void MakeIPv4MappedAddr(const char *v4, char *v6)
     memset(v6, 0, 10);
     memset(v6 + 10, 0xff, 2);
     memcpy(v6 + 12, v4, 4);
-    PR_ASSERT(_PR_IN6_IS_ADDR_V4MAPPED(((PRIPv6Addr *) v6)));
 }
 
 /*
@@ -225,7 +499,6 @@ static void MakeIPv4CompatAddr(const char *v4, char *v6)
 {
     memset(v6, 0, 12);
     memcpy(v6 + 12, v4, 4);
-    PR_ASSERT(_PR_IN6_IS_ADDR_V4COMPAT(((PRIPv6Addr *) v6)));
 }
 
 /*
@@ -406,7 +679,7 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByName(
     tmpbuf = localbuf;
     if (bufsize > sizeof(localbuf))
     {
-        tmpbuf = PR_Malloc(bufsize);
+        tmpbuf = (char *)PR_Malloc(bufsize);
         if (NULL == tmpbuf)
         {
             PR_SetError(PR_OUT_OF_MEMORY_ERROR, 0);
@@ -442,15 +715,51 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByName(
 	return rv;
 }
 
-#if defined(_PR_INET6_PROBE) && defined(_PR_HAVE_GETIPNODEBYNAME)
+#if !defined(_PR_INET6) && \
+        defined(_PR_INET6_PROBE) && defined(_PR_HAVE_GETIPNODEBYNAME)
 typedef struct hostent  * (*_pr_getipnodebyname_t)(const char *, int,
 										int, int *);
 typedef struct hostent  * (*_pr_getipnodebyaddr_t)(const void *, size_t,
 													int, int *);
 typedef void (*_pr_freehostent_t)(struct hostent *);
-extern void * _pr_getipnodebyname_fp;
-extern void * _pr_getipnodebyaddr_fp;
-extern void * _pr_freehostent_fp;
+static void * _pr_getipnodebyname_fp;
+static void * _pr_getipnodebyaddr_fp;
+static void * _pr_freehostent_fp;
+
+/*
+ * Look up the addresses of getipnodebyname, getipnodebyaddr,
+ * and freehostent.
+ */
+PRStatus
+_pr_find_getipnodebyname(void)
+{
+    PRLibrary *lib;	
+    PRStatus rv;
+#if defined(VMS)
+#define GETIPNODEBYNAME getenv("GETIPNODEBYNAME")
+#define GETIPNODEBYADDR getenv("GETIPNODEBYADDR")
+#define FREEHOSTENT     getenv("FREEHOSTENT")
+#else
+#define GETIPNODEBYNAME "getipnodebyname"
+#define GETIPNODEBYADDR "getipnodebyaddr"
+#define FREEHOSTENT     "freehostent"
+#endif
+    _pr_getipnodebyname_fp = PR_FindSymbolAndLibrary(GETIPNODEBYNAME, &lib);
+    if (NULL != _pr_getipnodebyname_fp) {
+        _pr_freehostent_fp = PR_FindSymbol(lib, FREEHOSTENT);
+        if (NULL != _pr_freehostent_fp) {
+            _pr_getipnodebyaddr_fp = PR_FindSymbol(lib, GETIPNODEBYADDR);
+            if (NULL != _pr_getipnodebyaddr_fp)
+                rv = PR_SUCCESS;
+            else
+                rv = PR_FAILURE;
+        } else
+            rv = PR_FAILURE;
+        (void)PR_UnloadLibrary(lib);
+    } else
+        rv = PR_FAILURE;
+    return rv;
+}
 #endif
 
 #if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
@@ -521,6 +830,25 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
         return PR_FAILURE;
     }
 
+#if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
+    PR_Lock(_pr_query_ifs_lock);
+    /*
+     * Keep querying the presence of IPv4 and IPv6 interfaces until
+     * at least one is up.  This allows us to detect the local
+     * machine going from offline to online.
+     */
+    if (!_pr_have_inet_if && !_pr_have_inet6_if) {
+	_pr_QueryNetIfs();
+#ifdef DEBUG_QUERY_IFS
+	if (_pr_have_inet_if)
+		printf("Have IPv4 source address\n");
+	if (_pr_have_inet6_if)
+		printf("Have IPv6 source address\n");
+#endif
+    }
+    PR_Unlock(_pr_query_ifs_lock);
+#endif
+
 #if defined(_PR_HAVE_GETIPNODEBYNAME)
 	if (flags & PR_AI_V4MAPPED)
 		tmp_flags |= AI_V4MAPPED;
@@ -538,7 +866,7 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
     tmpbuf = localbuf;
     if (bufsize > sizeof(localbuf))
     {
-        tmpbuf = PR_Malloc(bufsize);
+        tmpbuf = (char *)PR_Malloc(bufsize);
         if (NULL == tmpbuf)
         {
             PR_SetError(PR_OUT_OF_MEMORY_ERROR, 0);
@@ -553,11 +881,15 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
     LOCK_DNS();
     if (af == PR_AF_INET6)
     {
+        if ((flags & PR_AI_ADDRCONFIG) == 0 || _pr_have_inet6_if)
+        {
 #ifdef _PR_INET6_PROBE
-      if (_pr_ipv6_is_present == PR_TRUE)
+          if (_pr_ipv6_is_present == PR_TRUE)
 #endif
-        h = GETHOSTBYNAME2(name, AF_INET6); 
-        if ((NULL == h) && (flags & PR_AI_V4MAPPED))
+            h = GETHOSTBYNAME2(name, AF_INET6); 
+        }
+        if ((NULL == h) && (flags & PR_AI_V4MAPPED)
+        && ((flags & PR_AI_ADDRCONFIG) == 0 || _pr_have_inet_if))
         {
             did_af_inet = PR_TRUE;
             h = GETHOSTBYNAME2(name, AF_INET);
@@ -565,8 +897,11 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
     }
     else
     {
-        did_af_inet = PR_TRUE;
-        h = GETHOSTBYNAME2(name, af);
+        if ((flags & PR_AI_ADDRCONFIG) == 0 || _pr_have_inet_if)
+        {
+            did_af_inet = PR_TRUE;
+            h = GETHOSTBYNAME2(name, af);
+        }
     }
 #elif defined(_PR_HAVE_GETIPNODEBYNAME)
     h = getipnodebyname(name, md_af, tmp_flags, &error_num);
@@ -575,7 +910,12 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
 #endif	/* _PR_HAVE_GETHOSTBYNAME2 */
 #elif defined(_PR_INET6_PROBE) && defined(_PR_HAVE_GETIPNODEBYNAME)
     if (_pr_ipv6_is_present == PR_TRUE)
+    {
+#ifdef PR_GETIPNODE_NOT_THREADSAFE
+        LOCK_DNS();
+#endif
     	h = (*((_pr_getipnodebyname_t)_pr_getipnodebyname_fp))(name, md_af, tmp_flags, &error_num);
+    }
     else
     {
         LOCK_DNS();
@@ -619,7 +959,8 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
 #endif
 #if defined(_PR_INET6) && defined(_PR_HAVE_GETHOSTBYNAME2)
 		if ((PR_SUCCESS == rv) && (flags & PR_AI_V4MAPPED)
-				&& (flags & (PR_AI_ALL|PR_AI_ADDRCONFIG))
+				&& ((flags & PR_AI_ALL)
+				|| ((flags & PR_AI_ADDRCONFIG) && _pr_have_inet_if))
 				&& !did_af_inet && (h = GETHOSTBYNAME2(name, AF_INET)) != 0) {
 			rv = AppendV4AddrsToHostent(h, &buf, &bufsize, hp);
 			if (PR_SUCCESS != rv)
@@ -634,8 +975,12 @@ PR_IMPLEMENT(PRStatus) PR_GetIPNodeByName(
     UNLOCK_DNS();
 #endif	/* _PR_HAVE_GETHOSTBYNAME2 */
 #elif defined(_PR_INET6_PROBE) && defined(_PR_HAVE_GETIPNODEBYNAME)
+#ifdef PR_GETIPNODE_NOT_THREADSAFE
+    UNLOCK_DNS();
+#else
     if (_pr_ipv6_is_present == PR_FALSE)
         UNLOCK_DNS();
+#endif
 #else /* _PR_INET6 */
     UNLOCK_DNS();
 #endif /* _PR_INET6 */
@@ -681,6 +1026,10 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByAddr(
 #else
 		af = AF_INET;
 #endif
+#if defined(_PR_GHBA_DISALLOW_V4MAPPED)
+		if (_PR_IN6_IS_ADDR_V4MAPPED(&hostaddr->ipv6.ip))
+			af = AF_INET;
+#endif
 	}
 	else
 	{
@@ -717,7 +1066,7 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByAddr(
     tmpbuf = localbuf;
     if (bufsize > sizeof(localbuf))
     {
-        tmpbuf = PR_Malloc(bufsize);
+        tmpbuf = (char *)PR_Malloc(bufsize);
         if (NULL == tmpbuf)
         {
             PR_SetError(PR_OUT_OF_MEMORY_ERROR, 0);
@@ -731,8 +1080,13 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByAddr(
 	h = getipnodebyaddr(addr, addrlen, af, &error_num);
 #elif defined(_PR_HAVE_GETIPNODEBYADDR) && defined(_PR_INET6_PROBE)
     if (_pr_ipv6_is_present == PR_TRUE)
+    {
+#ifdef PR_GETIPNODE_NOT_THREADSAFE
+        LOCK_DNS();
+#endif
     	h = (*((_pr_getipnodebyaddr_t)_pr_getipnodebyaddr_fp))(addr, addrlen,
 				af, &error_num);
+    }
 	else
     {
         LOCK_DNS();
@@ -788,8 +1142,12 @@ PR_IMPLEMENT(PRStatus) PR_GetHostByAddr(
     /* Must match the convoluted logic above for LOCK_DNS() */
 #if defined(_PR_HAVE_GETIPNODEBYADDR) && defined(_PR_INET6)
 #elif defined(_PR_HAVE_GETIPNODEBYADDR) && defined(_PR_INET6_PROBE)
+#ifdef PR_GETIPNODE_NOT_THREADSAFE
+    UNLOCK_DNS();
+#else
     if (_pr_ipv6_is_present == PR_FALSE)
         UNLOCK_DNS();
+#endif
 #else	/* _PR_HAVE_GETIPNODEBYADDR */
     UNLOCK_DNS();
 #endif /* _PR_HAVE_GETIPNODEBYADDR */
@@ -1015,7 +1373,7 @@ PRUintn _PR_NetAddrSize(const PRNetAddr* addr)
 #else
         addrsize = sizeof(addr->ipv6);
 #endif
-#if defined(XP_UNIX)
+#if defined(XP_UNIX) || defined(XP_OS2)
     else if (AF_UNIX == addr->raw.family)
         addrsize = sizeof(addr->local);
 #endif
@@ -1164,7 +1522,7 @@ PR_IsNetAddrType(const PRNetAddr *addr, PRNetAddrValue val)
     return PR_FALSE;
 }
 
-#ifndef _PR_INET6
+#ifndef _PR_HAVE_INET_NTOP
 #define XX 127
 static const unsigned char index_hex[256] = {
     XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX,
@@ -1404,14 +1762,14 @@ static const char *V6AddrToString(
 #undef STUFF    
 }
 
-#endif /* !_PR_INET6 */
+#endif /* !_PR_HAVE_INET_NTOP */
 
 PR_IMPLEMENT(PRStatus) PR_StringToNetAddr(const char *string, PRNetAddr *addr)
 {
     PRStatus status = PR_SUCCESS;
     PRIntn rv;
 
-#if defined(_PR_INET6)
+#if defined(_PR_HAVE_INET_NTOP)
     rv = inet_pton(AF_INET6, string, &addr->ipv6.ip);
     if (1 == rv)
     {
@@ -1434,7 +1792,7 @@ PR_IMPLEMENT(PRStatus) PR_StringToNetAddr(const char *string, PRNetAddr *addr)
             status = PR_FAILURE;
         }
     }
-#else /* _PR_INET6 */
+#else /* _PR_HAVE_INET_NTOP */
     rv = StringToV6Addr(string, &addr->ipv6.ip);
     if (1 == rv) {
         addr->raw.family = PR_AF_INET6;
@@ -1458,7 +1816,7 @@ PR_IMPLEMENT(PRStatus) PR_StringToNetAddr(const char *string, PRNetAddr *addr)
         PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
         status = PR_FAILURE;
     }
-#endif /* _PR_INET6 */
+#endif /* _PR_HAVE_INET_NTOP */
 
     return status;
 }
@@ -1468,7 +1826,7 @@ PR_IMPLEMENT(PRStatus) PR_NetAddrToString(
 {
     if (PR_AF_INET6 == addr->raw.family)
     {
-#if defined(_PR_INET6)
+#if defined(_PR_HAVE_INET_NTOP)
         if (NULL == inet_ntop(AF_INET6, &addr->ipv6.ip, string, size))
 #else
         if (NULL == V6AddrToString(&addr->ipv6.ip, string, size))
@@ -1554,3 +1912,268 @@ PR_IMPLEMENT(PRUint64) PR_htonll(PRUint64 n)
     return n;
 #endif
 }  /* htonll */
+
+
+/*
+ * Implementation of PR_GetAddrInfoByName and friends
+ *
+ * Compile-time options:
+ *
+ *  _PR_HAVE_GETADDRINFO  Define this macro if the target system provides
+ *                        getaddrinfo. With this defined, NSPR will require
+ *                        getaddrinfo at run time. If this if not defined,
+ *                        then NSPR will attempt to dynamically resolve
+ *                        getaddrinfo, falling back to PR_GetHostByName if
+ *                        getaddrinfo does not exist on the target system.
+ *
+ * Since getaddrinfo is a relatively new system call on many systems,
+ * we are forced to dynamically resolve it at run time in most cases.
+ * The exception includes any system (such as Mac OS X) that is known to
+ * provide getaddrinfo in all versions that NSPR cares to support.
+ */
+
+#if defined(_PR_HAVE_GETADDRINFO)
+
+#if defined(_PR_INET6)
+
+typedef struct addrinfo PRADDRINFO;
+#define GETADDRINFO getaddrinfo
+#define FREEADDRINFO freeaddrinfo
+
+#elif defined(_PR_INET6_PROBE)
+
+typedef struct addrinfo PRADDRINFO;
+
+/* getaddrinfo/freeaddrinfo prototypes */ 
+#if defined(WIN32)
+#define FUNC_MODIFIER __stdcall
+#else
+#define FUNC_MODIFIER
+#endif
+typedef int (FUNC_MODIFIER * FN_GETADDRINFO)
+    (const char *nodename,
+     const char *servname,
+     const PRADDRINFO *hints,
+     PRADDRINFO **res);
+typedef int (FUNC_MODIFIER * FN_FREEADDRINFO)
+    (PRADDRINFO *ai);
+
+/* global state */
+static FN_GETADDRINFO   _pr_getaddrinfo   = NULL;
+static FN_FREEADDRINFO  _pr_freeaddrinfo  = NULL;
+
+#if defined(VMS)
+#define GETADDRINFO_SYMBOL getenv("GETADDRINFO")
+#define FREEADDRINFO_SYMBOL getenv("FREEADDRINFO")
+#else
+#define GETADDRINFO_SYMBOL "getaddrinfo"
+#define FREEADDRINFO_SYMBOL "freeaddrinfo"
+#endif
+
+PRStatus
+_pr_find_getaddrinfo(void)
+{
+    PRLibrary *lib;
+#ifdef WIN32
+    /*
+     * On windows, we need to search ws2_32.dll for getaddrinfo and
+     * freeaddrinfo.  This library might not be loaded yet.
+     */
+    lib = PR_LoadLibrary("ws2_32.dll");
+    if (!lib) {
+        return PR_FAILURE;
+    }
+    _pr_getaddrinfo = (FN_GETADDRINFO)
+        PR_FindFunctionSymbol(lib, GETADDRINFO_SYMBOL);
+    _pr_freeaddrinfo = (FN_FREEADDRINFO)
+        PR_FindFunctionSymbol(lib, FREEADDRINFO_SYMBOL);
+    if (!_pr_getaddrinfo || !_pr_freeaddrinfo) {
+        PR_UnloadLibrary(lib);
+        return PR_FAILURE;
+    }
+    /* Keep ws2_32.dll loaded. */
+    return PR_SUCCESS;
+#else
+    /*
+     * Resolve getaddrinfo by searching all loaded libraries.  Then
+     * search library containing getaddrinfo for freeaddrinfo.
+     */
+    _pr_getaddrinfo = (FN_GETADDRINFO)
+        PR_FindFunctionSymbolAndLibrary(GETADDRINFO_SYMBOL, &lib);
+    if (!_pr_getaddrinfo) {
+        return PR_FAILURE;
+    }
+    _pr_freeaddrinfo = (FN_FREEADDRINFO)
+        PR_FindFunctionSymbol(lib, FREEADDRINFO_SYMBOL);
+    PR_UnloadLibrary(lib);
+    if (!_pr_freeaddrinfo) {
+        return PR_FAILURE;
+    }
+    return PR_SUCCESS;
+#endif
+}
+
+#define GETADDRINFO (*_pr_getaddrinfo)
+#define FREEADDRINFO (*_pr_freeaddrinfo)
+
+#endif /* _PR_INET6 */
+
+#endif /* _PR_HAVE_GETADDRINFO */
+
+/*
+ * If getaddrinfo does not exist, then we will fall back on
+ * PR_GetHostByName, which requires that we allocate a buffer for the 
+ * PRHostEnt data structure and its members.
+ */
+typedef struct PRAddrInfoFB {
+    char      buf[PR_NETDB_BUF_SIZE];
+    PRHostEnt hostent;
+} PRAddrInfoFB;
+
+static PRAddrInfo *
+pr_GetAddrInfoByNameFB(const char  *hostname,
+                       PRUint16     af,
+                       PRIntn       flags)
+{
+    PRStatus rv;
+    PRAddrInfoFB *ai;
+    /* fallback on PR_GetHostByName */
+    ai = PR_NEW(PRAddrInfoFB);
+    if (!ai) {
+        PR_SetError(PR_OUT_OF_MEMORY_ERROR, 0);
+        return NULL;
+    }
+    rv = PR_GetHostByName(hostname, ai->buf, sizeof ai->buf, &ai->hostent);
+    if (rv == PR_FAILURE) {
+        PR_Free(ai);
+        return NULL;
+    }
+    return (PRAddrInfo *) ai;
+}
+
+PR_IMPLEMENT(PRAddrInfo *) PR_GetAddrInfoByName(const char  *hostname,
+                                                PRUint16     af,
+                                                PRIntn       flags)
+{
+    /* restrict input to supported values */
+    if ((af != PR_AF_INET && af != PR_AF_UNSPEC) || flags != PR_AI_ADDRCONFIG) {
+        PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+        return NULL;
+    }
+
+    if (!_pr_initialized) _PR_ImplicitInitialization();
+
+#if !defined(_PR_HAVE_GETADDRINFO)
+    return pr_GetAddrInfoByNameFB(hostname, af, flags);
+#else
+#if defined(_PR_INET6_PROBE)
+    if (!_pr_ipv6_is_present) {
+        return pr_GetAddrInfoByNameFB(hostname, af, flags);
+    }
+#endif
+    {
+        PRADDRINFO *res, hints;
+        PRStatus rv;
+
+        /*
+         * we assume a RFC 2553 compliant getaddrinfo.  this may at some
+         * point need to be customized as platforms begin to adopt the
+         * RFC 3493.
+         */
+
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_flags = AI_CANONNAME;
+        hints.ai_family = (af == PR_AF_INET) ? AF_INET : AF_UNSPEC;
+
+        /*
+         * it is important to select a socket type in the hints, otherwise we
+         * will get back repetitive entries: one for each socket type.  since
+         * we do not expose ai_socktype through our API, it is okay to do this
+         * here.  the application may still choose to create a socket of some
+         * other type.
+         */
+        hints.ai_socktype = SOCK_STREAM;
+
+        rv = GETADDRINFO(hostname, NULL, &hints, &res);
+        if (rv == 0)
+            return (PRAddrInfo *) res;
+
+        PR_SetError(PR_DIRECTORY_LOOKUP_ERROR, rv);
+    }
+    return NULL;
+#endif
+}
+
+PR_IMPLEMENT(void) PR_FreeAddrInfo(PRAddrInfo *ai)
+{
+#if defined(_PR_HAVE_GETADDRINFO)
+#if defined(_PR_INET6_PROBE)
+    if (!_pr_ipv6_is_present)
+        PR_Free((PRAddrInfoFB *) ai);
+    else
+#endif
+        FREEADDRINFO((PRADDRINFO *) ai);
+#else
+    PR_Free((PRAddrInfoFB *) ai);
+#endif
+}
+
+PR_IMPLEMENT(void *) PR_EnumerateAddrInfo(void             *iterPtr,
+                                          const PRAddrInfo *base,
+                                          PRUint16          port,
+                                          PRNetAddr        *result)
+{
+#if defined(_PR_HAVE_GETADDRINFO)
+    PRADDRINFO *ai;
+#if defined(_PR_INET6_PROBE)
+    if (!_pr_ipv6_is_present) {
+        /* using PRAddrInfoFB */
+        PRIntn iter = (PRIntn) iterPtr;
+        iter = PR_EnumerateHostEnt(iter, &((PRAddrInfoFB *) base)->hostent, port, result);
+        if (iter < 0)
+            iter = 0;
+        return (void *) iter;
+    }
+#endif
+
+    if (iterPtr)
+        ai = ((PRADDRINFO *) iterPtr)->ai_next;
+    else
+        ai = (PRADDRINFO *) base;
+
+    if (ai) {
+        /* copy sockaddr to PRNetAddr */
+        memcpy(result, ai->ai_addr, ai->ai_addrlen);
+        result->raw.family = ai->ai_addr->sa_family;
+        if (ai->ai_addrlen < sizeof(PRNetAddr))
+            memset(((char*)result)+ai->ai_addrlen, 0, sizeof(PRNetAddr) - ai->ai_addrlen);
+
+        if (result->raw.family == PR_AF_INET)
+            result->inet.port = htons(port);
+        else
+            result->ipv6.port = htons(port);
+    }
+
+    return ai;
+#else
+    /* using PRAddrInfoFB */
+    PRIntn iter = (PRIntn) iterPtr;
+    iter = PR_EnumerateHostEnt(iter, &((PRAddrInfoFB *) base)->hostent, port, result);
+    if (iter < 0)
+        iter = 0;
+    return (void *) iter;
+#endif
+}
+
+PR_IMPLEMENT(const char *) PR_GetCanonNameFromAddrInfo(const PRAddrInfo *ai)
+{
+#if defined(_PR_HAVE_GETADDRINFO)
+#if defined(_PR_INET6_PROBE)
+    if (!_pr_ipv6_is_present)
+        return ((const PRAddrInfoFB *) ai)->hostent.h_name;
+#endif
+    return ((const PRADDRINFO *) ai)->ai_canonname;
+#else
+    return ((const PRAddrInfoFB *) ai)->hostent.h_name;
+#endif
+}

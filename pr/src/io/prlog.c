@@ -194,13 +194,16 @@ void _PR_InitLog(void)
 
     ev = PR_GetEnv("NSPR_LOG_MODULES");
     if (ev && ev[0]) {
-        char module[64];
+        char module[64];  /* Security-Critical: If you change this
+                           * size, you must also change the sscanf
+                           * format string to be size-1.
+                           */
         PRBool isSync = PR_FALSE;
         PRIntn evlen = strlen(ev), pos = 0;
         PRInt32 bufSize = DEFAULT_BUF_SIZE;
         while (pos < evlen) {
             PRIntn level = 1, count = 0, delta = 0;
-            count = sscanf(&ev[pos], "%64[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
+            count = sscanf(&ev[pos], "%63[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
             if (count == 0) break;
@@ -232,7 +235,7 @@ void _PR_InitLog(void)
             /*found:*/
             count = sscanf(&ev[pos], " , %n", &delta);
             pos += delta;
-            if (count == -1) break;
+            if (count == EOF) break;
         }
         PR_SetLogBuffering(isSync ? bufSize : 0);
 
@@ -266,7 +269,13 @@ void _PR_LogCleanup(void)
     PR_LogFlush();
 
 #ifdef _PR_USE_STDIO_FOR_LOGGING
-    if (logFile && logFile != stdout && logFile != stderr) {
+    if (logFile
+        && logFile != stdout
+        && logFile != stderr
+#ifdef XP_PC
+        && logFile != WIN32_DEBUG_FILE
+#endif
+        ) {
         fclose(logFile);
     }
 #else
@@ -277,11 +286,16 @@ void _PR_LogCleanup(void)
 
     while (lm != NULL) {
         PRLogModuleInfo *next = lm->next;
-        PR_Free((/*const*/ char *)lm->name);
+        free((/*const*/ char *)lm->name);
         PR_Free(lm);
         lm = next;
     }
     logModules = NULL;
+
+    if (_pr_logLock) {
+        PR_DestroyLock(_pr_logLock);
+        _pr_logLock = NULL;
+    }
 }
 
 static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
@@ -290,12 +304,15 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
 
     ev = PR_GetEnv("NSPR_LOG_MODULES");
     if (ev && ev[0]) {
-        char module[64];
+        char module[64];  /* Security-Critical: If you change this
+                           * size, you must also change the sscanf
+                           * format string to be size-1.
+                           */
         PRIntn evlen = strlen(ev), pos = 0;
         while (pos < evlen) {
             PRIntn level = 1, count = 0, delta = 0;
 
-            count = sscanf(&ev[pos], "%64[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
+            count = sscanf(&ev[pos], "%63[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
             if (count == 0) break;
@@ -314,7 +331,7 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
             }
             count = sscanf(&ev[pos], " , %n", &delta);
             pos += delta;
-            if (count == -1) break;
+            if (count == EOF) break;
         }
     }
 } /* end _PR_SetLogModuleLevel() */
@@ -344,24 +361,33 @@ PR_IMPLEMENT(PRBool) PR_SetLogFile(const char *file)
 #ifdef XP_PC
     if ( strcmp( file, "WinDebug") == 0)
     {
-        logFile = WIN32_DEBUG_FILE;
-        return(PR_TRUE);
+        newLogFile = WIN32_DEBUG_FILE;
     }
+    else
 #endif
-    newLogFile = fopen(file, "w");
-    if (newLogFile) {
+    {
+        newLogFile = fopen(file, "w");
+        if (!newLogFile)
+            return PR_FALSE;
+
         /* We do buffering ourselves. */
         setvbuf(newLogFile, NULL, _IONBF, 0);
-        if (logFile && logFile != stdout && logFile != stderr) {
-            fclose(logFile);
-        }
-        logFile = newLogFile;
     }
-    return (PRBool) (newLogFile != 0);
+    if (logFile
+        && logFile != stdout
+        && logFile != stderr
+#ifdef XP_PC
+        && logFile != WIN32_DEBUG_FILE
+#endif
+        ) {
+        fclose(logFile);
+    }
+    logFile = newLogFile;
+    return PR_TRUE;
 #else
     PRFileDesc *newLogFile;
 
-    newLogFile = PR_Open(file, PR_WRONLY|PR_CREATE_FILE, 0666);
+    newLogFile = PR_Open(file, PR_WRONLY|PR_CREATE_FILE|PR_TRUNCATE, 0666);
     if (newLogFile) {
         if (logFile && logFile != _pr_stdout && logFile != _pr_stderr) {
             PR_Close(logFile);
@@ -482,8 +508,7 @@ PR_IMPLEMENT(void) PR_Abort(void)
 #include <builtin.h>
 static void DebugBreak(void) { _interrupt(3); }
 #elif defined(XP_OS2_EMX)
-/* Force a trap */
-static void DebugBreak(void) { int *pTrap=NULL; *pTrap = 1; }
+static void DebugBreak(void) { asm("int $3"); }
 #else
 static void DebugBreak(void) { }
 #endif

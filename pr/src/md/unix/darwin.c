@@ -82,11 +82,11 @@ _MD_WAKEUP_WAITER(PRThread *thread)
     return PR_SUCCESS;
 }
 
-/* These functions should not be called for Rhapsody */
+/* These functions should not be called for Darwin */
 void
 _MD_YIELD(void)
 {
-    PR_NOT_REACHED("_MD_YIELD should not be called for Rhapsody.");
+    PR_NOT_REACHED("_MD_YIELD should not be called for Darwin.");
 }
 
 PRStatus
@@ -98,37 +98,10 @@ _MD_CREATE_THREAD(
     PRThreadState state,
     PRUint32 stackSize)
 {
-    PR_NOT_REACHED("_MD_CREATE_THREAD should not be called for Rhapsody.");
+    PR_NOT_REACHED("_MD_CREATE_THREAD should not be called for Darwin.");
 	return PR_FAILURE;
 }
 #endif /* ! _PR_PTHREADS */
-
-#if defined(_PR_PTHREADS)
-
-/*
-** Stubs for unimplemented functions
-*/
-
-int pthread_condattr_init(pthread_condattr_t *attr)
-{
-    return 0;
-}
-
-int pthread_kill(pthread_t thread, int sig)
-{
-    return ENOSYS;
-}
-
-typedef struct siginfo_t siginfo_t;
-
-int sigtimedwait(const sigset_t *set, siginfo_t *info,
-    const struct timespec *timeout)
-{
-    errno = ENOSYS;
-    return -1;
-}
-
-#endif /* _PR_PTHREADS */
 
 /* darwin.c */
 

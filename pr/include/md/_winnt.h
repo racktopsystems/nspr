@@ -47,6 +47,9 @@
 
 #include <windows.h>
 #include <winsock.h>
+#ifdef __MINGW32__
+#include <mswsock.h>
+#endif
 #include <errno.h>
 
 #include "prio.h"
@@ -63,6 +66,26 @@
 #define HAVE_DLL
 #define HAVE_CUSTOM_USER_THREADS
 #define HAVE_THREAD_AFFINITY
+#define _PR_HAVE_GETADDRINFO
+#define _PR_INET6_PROBE
+#ifndef _PR_INET6
+#define AF_INET6 23
+/* newer ws2tcpip.h provides these */
+#ifndef AI_CANONNAME
+#define AI_CANONNAME 0x2
+struct addrinfo {
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+    size_t ai_addrlen;
+    char *ai_canonname;
+    struct sockaddr *ai_addr;
+    struct addrinfo *ai_next;
+};
+#endif
+#endif
+#define _PR_HAVE_THREADSAFE_GETHOST
 #define _PR_HAVE_ATOMIC_OPS
 #define _PR_HAVE_ATOMIC_CAS
 #define PR_HAVE_WIN32_NAMED_SHARED_MEMORY
@@ -149,6 +172,9 @@ struct _MDThread {
     void            *fiber_arg;         /* arg to main fiber routine */
     PRUint32         fiber_stacksize;   /* stacksize for fiber */
     PRInt32          fiber_last_error;  /* last error for the fiber */
+    void (*start)(void *);              /* used by _PR_MD_CREATE_THREAD to
+                                         * pass its 'start' argument to
+                                         * pr_root. */
 };
 
 struct _MDThreadStack {
@@ -346,6 +372,8 @@ extern int _PR_NTFiberSafeSelect(int, fd_set *, fd_set *, fd_set *,
 #define _MD_INIT_THREAD             _PR_MD_INIT_THREAD
 #define _MD_INIT_ATTACHED_THREAD    _PR_MD_INIT_THREAD
 #define _MD_CREATE_THREAD           _PR_MD_CREATE_THREAD
+#define _MD_JOIN_THREAD             _PR_MD_JOIN_THREAD
+#define _MD_END_THREAD              _PR_MD_END_THREAD
 #define _MD_YIELD                   _PR_MD_YIELD
 #define _MD_SET_PRIORITY            _PR_MD_SET_PRIORITY
 #define _MD_CLEAN_THREAD            _PR_MD_CLEAN_THREAD
@@ -448,6 +476,9 @@ extern PRStatus _PR_KillWindowsProcess(struct PRProcess *process);
 #define _MD_INTERVAL_PER_SEC              _PR_MD_INTERVAL_PER_SEC
 #define _MD_INTERVAL_PER_MILLISEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000)
 #define _MD_INTERVAL_PER_MICROSEC()       (_PR_MD_INTERVAL_PER_SEC() / 1000000)
+
+/* --- Time --- */
+extern void _PR_FileTimeToPRTime(const FILETIME *filetime, PRTime *prtm);
 
 /* --- Native-Thread Specific Definitions ------------------------------- */
 

@@ -76,7 +76,11 @@ endef
 
 LINK_DLL	= $(LD) $(OS_DLLFLAGS) $(DLLFLAGS)
 
-ifneq (,$(filter WINNT OS2, $(OS_ARCH)))
+ifeq ($(OS_ARCH),Darwin)
+PWD := $(shell pwd)
+endif
+
+ifeq (,$(CROSS_COMPILE)$(filter-out WINNT OS2, $(OS_ARCH)))
 INSTALL		= $(NSINSTALL)
 else
 ifeq ($(NSDISTMODE),copy)
@@ -85,13 +89,17 @@ INSTALL		= $(NSINSTALL) -t
 else
 ifeq ($(NSDISTMODE),absolute_symlink)
 # install using absolute symbolic links
+ifeq ($(OS_ARCH),Darwin)
+INSTALL		= $(NSINSTALL) -L $(PWD)
+else
 INSTALL		= $(NSINSTALL) -L `$(NFSPWD)`
+endif
 else
 # install using relative symbolic links
 INSTALL		= $(NSINSTALL) -R
 endif
 endif
-endif # WINNT || OS2
+endif # (WINNT || OS2) && !CROSS_COMPILE
 
 DEPENDENCIES	= $(OBJDIR)/.md
 
@@ -125,6 +133,10 @@ endif
 
 ifeq ($(USE_IPV6),1)
 DEFINES += -D_PR_INET6
+endif
+
+ifeq ($(MOZ_UNICODE),1)
+DEFINES += -DMOZ_UNICODE
 endif
 
 ####################################################################

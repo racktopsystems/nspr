@@ -49,6 +49,8 @@
 #define _PR_SI_ARCHITECTURE "alpha"
 #elif defined(__ia64__)
 #define _PR_SI_ARCHITECTURE "ia64"
+#elif defined(__x86_64__)
+#define _PR_SI_ARCHITECTURE "x86-64"
 #elif defined(__mc68000__)
 #define _PR_SI_ARCHITECTURE "m68k"
 #elif defined(__sparc__)
@@ -59,6 +61,12 @@
 #define _PR_SI_ARCHITECTURE "mips"
 #elif defined(__arm__)
 #define _PR_SI_ARCHITECTURE "arm"
+#elif defined(__hppa__)
+#define _PR_SI_ARCHITECTURE "hppa"
+#elif defined(__s390__)
+#define _PR_SI_ARCHITECTURE "s390"
+#elif defined(__s390x__)
+#define _PR_SI_ARCHITECTURE "s390x"
 #else
 #error "Unknown CPU architecture"
 #endif
@@ -103,6 +111,19 @@ extern PRInt32 _PR_ia64_AtomicSet(PRInt32 *val, PRInt32 newval);
 #define _MD_ATOMIC_SET                _PR_ia64_AtomicSet
 #endif
 
+#if defined(__x86_64__)
+#define _PR_HAVE_ATOMIC_OPS
+#define _MD_INIT_ATOMIC()
+extern PRInt32 _PR_x86_64_AtomicIncrement(PRInt32 *val);
+#define _MD_ATOMIC_INCREMENT          _PR_x86_64_AtomicIncrement
+extern PRInt32 _PR_x86_64_AtomicDecrement(PRInt32 *val);
+#define _MD_ATOMIC_DECREMENT          _PR_x86_64_AtomicDecrement
+extern PRInt32 _PR_x86_64_AtomicAdd(PRInt32 *ptr, PRInt32 val);
+#define _MD_ATOMIC_ADD                _PR_x86_64_AtomicAdd
+extern PRInt32 _PR_x86_64_AtomicSet(PRInt32 *val, PRInt32 newval);
+#define _MD_ATOMIC_SET                _PR_x86_64_AtomicSet
+#endif
+
 #define USE_SETJMP
 #if defined(__GLIBC__) && __GLIBC__ >= 2
 #define _PR_POLL_AVAILABLE
@@ -118,7 +139,9 @@ extern PRInt32 _PR_ia64_AtomicSet(PRInt32 *val, PRInt32 newval);
 #endif
 #if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1)
 #define _PR_INET6
+#define _PR_HAVE_INET_NTOP
 #define _PR_HAVE_GETHOSTBYNAME2
+#define _PR_HAVE_GETADDRINFO
 #define _PR_INET6_PROBE
 #endif
 #define _PR_HAVE_SYSV_SEMAPHORES
@@ -469,5 +492,7 @@ extern int __syscall_poll(struct pollfd *ufds, unsigned long int nfds,
 
 /* For writev() */
 #include <sys/uio.h>
+
+extern void _MD_linux_map_sendfile_error(int err);
 
 #endif /* nspr_linux_defs_h___ */

@@ -46,8 +46,18 @@
  * includes winsock.h, with _WIN32_WINNT undefined.
  */
 
-#ifdef WINNT
+#if defined(WINNT) || defined(__MINGW32__)
 #include <winsock.h>
+#endif
+
+/* MinGW doesn't define these in its winsock.h. */
+#ifdef __MINGW32__
+#ifndef IP_TTL
+#define IP_TTL 7
+#endif
+#ifndef IP_TOS
+#define IP_TOS 8
+#endif
 #endif
 
 #include "primpl.h"
@@ -57,7 +67,7 @@
 #include <netinet/in_systm.h>  /* n_short, n_long, n_time */
 #endif
 
-#if defined(XP_UNIX) || defined(OS2)
+#if defined(XP_UNIX) || defined(OS2) || (defined(XP_BEOS) && defined(BONE_VERSION))
 #include <netinet/tcp.h>  /* TCP_NODELAY, TCP_MAXSEG */
 #endif
 
@@ -86,7 +96,7 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
         {
             case PR_SockOpt_Linger:
             {
-#if !defined(XP_BEOS)
+#if !defined(XP_BEOS) || defined(BONE_VERSION)
                 struct linger linger;
                 length = sizeof(linger);
                 rv = _PR_MD_GETSOCKOPT(
@@ -244,7 +254,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
         {
             case PR_SockOpt_Linger:
             {
-#if !defined(XP_BEOS)
+#if !defined(XP_BEOS) || defined(BONE_VERSION)
                 struct linger linger;
                 linger.l_onoff = data->value.linger.polarity;
                 linger.l_linger = PR_IntervalToSeconds(data->value.linger.linger);

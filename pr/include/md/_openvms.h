@@ -97,6 +97,7 @@ struct ip_mreq {
 #define _PR_USE_POLL
 #define _PR_STAT_HAS_ONLY_ST_ATIME
 #define _PR_NO_LARGE_FILES
+#define _PR_STRICT_ADDR_LEN
 
 /* IPv6 support */
 #ifdef _SOCKADDR_LEN
@@ -104,9 +105,25 @@ struct ip_mreq {
 #endif
 #define _PR_HAVE_GETIPNODEBYNAME
 #define _PR_HAVE_GETIPNODEBYADDR
+#define _PR_HAVE_GETADDRINFO
 #define _PR_INET6_PROBE
-#ifndef _PR_INET6
+#ifdef _PR_INET6
+#define _PR_HAVE_INET_NTOP
+#else
 #define AF_INET6 26
+#ifndef AI_CANONNAME
+#define AI_CANONNAME 0x00000002
+struct addrinfo {
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+    size_t ai_addrlen;
+    char *ai_canonname;
+    struct sockaddr *ai_addr;
+    struct addrinfo *ai_next;
+};
+#endif
 #define AI_V4MAPPED 0x00000010
 #define AI_ALL      0x00000008
 #define AI_ADDRCONFIG 0x00000020

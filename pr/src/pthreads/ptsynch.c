@@ -71,6 +71,13 @@ void _PR_InitLocks(void)
     rv = _PT_PTHREAD_MUTEXATTR_INIT(&_pt_mattr); 
     PR_ASSERT(0 == rv);
 
+#ifdef LINUX
+#if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2)
+    rv = pthread_mutexattr_settype(&_pt_mattr, PTHREAD_MUTEX_ADAPTIVE_NP);
+    PR_ASSERT(0 == rv);
+#endif
+#endif
+
     rv = _PT_PTHREAD_CONDATTR_INIT(&_pt_cvar_attr);
     PR_ASSERT(0 == rv);
 }
@@ -464,7 +471,8 @@ PR_IMPLEMENT(PRMonitor*) PR_NewMonitor(void)
 PR_IMPLEMENT(PRMonitor*) PR_NewNamedMonitor(const char* name)
 {
     PRMonitor* mon = PR_NewMonitor();
-    mon->name = name;
+    if (mon)
+        mon->name = name;
     return mon;
 }
 
@@ -706,7 +714,12 @@ PR_IMPLEMENT(PRSem *) PR_OpenSemaphore(
     }
     else
     {
+#ifdef HPUX
+        /* Pass 0 as the mode and value arguments to work around a bug. */
+        sem->sem = sem_open(osname, 0, 0, 0);
+#else
         sem->sem = sem_open(osname, 0);
+#endif
     }
     if ((sem_t *) -1 == sem->sem)
     {
@@ -1041,7 +1054,7 @@ PR_IMPLEMENT(PRStatus) PRP_TryLock(PRLock *lock)
     return (PT_TRYLOCK_SUCCESS == rv) ? PR_SUCCESS : PR_FAILURE;
 }  /* PRP_TryLock */
 
-PR_IMPLEMENT(PRCondVar*) PRP_NewNakedCondVar()
+PR_IMPLEMENT(PRCondVar*) PRP_NewNakedCondVar(void)
 {
     PRCondVar *cv;
 

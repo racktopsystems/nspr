@@ -45,10 +45,6 @@ include $(topsrcdir)/config/config.mk
 
 DIRS = dll
 
-ifeq ($(OS_TARGET),OS2)
-OS_CFLAGS = $(OS_EXE_CFLAGS)
-endif
-
 CSRCS =             \
 	accept.c		\
 	acceptread.c	\
@@ -79,7 +75,9 @@ CSRCS =             \
 	fileio.c		\
 	foreign.c	    \
 	forktest.c	    \
+	formattm.c	    \
 	fsync.c	        \
+	getai.c			\
 	gethost.c		\
 	getproto.c		\
 	i2l.c		    \
@@ -98,6 +96,7 @@ CSRCS =             \
 	joinuu.c        \
 	layer.c		    \
 	lazyinit.c		\
+	libfilename.c	\
 	lltest.c        \
 	lock.c          \
 	lockfile.c      \
@@ -221,19 +220,23 @@ TARGETS = $(PROGS)
 INCLUDES = -I$(dist_includedir) -I$(topsrcdir)/pr/include -I$(topsrcdir)/pr/include/private
 
 ifeq ($(OS_ARCH), WINNT)
+ifdef NS_USE_GCC
+  EXTRA_LIBS += -lwsock32
+else
+  EXTRA_LIBS += wsock32.lib
   LDOPTS = -NOLOGO -DEBUG -DEBUGTYPE:CV -INCREMENTAL:NO
   ifdef PROFILE                                                                              
     LDOPTS += -PROFILE -MAP                                                                  
   endif # profile
+endif # NS_USE_GCC
 endif
 
 ifeq ($(OS_ARCH),OS2)
 ifeq ($(MOZ_OS2_TOOLS),VACPP)
   LDOPTS = -NOE -DEBUG -nologo -PMTYPE:VIO
 else
-ifeq ($(MOZ_OS2_EMX_OBJECTFORMAT),OMF)
-  LDOPTS = -Zlinker /PM:VIO
-endif
+  EXTRA_LIBS = $(OS_LIBS)
+  LDOPTS = -Zomf -Zlinker /PM:VIO -Zlinker /ST:0x64000
 endif
 endif
 
@@ -296,8 +299,10 @@ endif
 ifeq ($(OS_ARCH), HP-UX)
     LDOPTS += -z -Wl,+s,+b,$(ABSOLUTE_LIB_DIR)
     ifeq ($(USE_64),1)
-        LDOPTS += +DA2.0W
-        EXTRA_LIBS = -lpthread
+        LDOPTS += +DD64
+    endif
+    ifeq ($(USE_PTHREADS),1)
+        EXTRA_LIBS = $(LIBPTHREAD)
     endif
 endif
 
@@ -431,7 +436,7 @@ LIBPTHREAD = -lpthread
 ifeq ($(OS_ARCH),AIX)
 LIBPTHREAD = -lpthreads
 endif
-ifeq (,$(filter-out FreeBSD OpenBSD BSD_OS NTO Darwin OpenUNIX,$(OS_ARCH)))
+ifeq (,$(filter-out FreeBSD OpenBSD BSD_OS QNX Darwin OpenUNIX,$(OS_ARCH)))
 LIBPTHREAD =
 endif
 ifeq ($(OS_ARCH)$(basename $(OS_RELEASE)),HP-UXB.10)
@@ -480,11 +485,11 @@ else
 
 $(OBJDIR)/%$(PROG_SUFFIX): $(OBJDIR)/%.$(OBJ_SUFFIX)
 	@$(MAKE_OBJDIR)
-ifeq ($(OS_ARCH), WINNT)
-	link $(LDOPTS) $(EXTRA_LDOPTS) $< $(LIBPLC) $(LIBNSPR) $(EXTRA_LIBS) wsock32.lib -out:$@
+ifeq ($(NS_USE_GCC)_$(OS_ARCH),_WINNT)
+	link $(LDOPTS) $(EXTRA_LDOPTS) $< $(LIBPLC) $(LIBNSPR) $(EXTRA_LIBS) -out:$@
 else
-ifeq ($(OS_ARCH),OS2)
-	$(LINK) $(EXEFLAGS) $(LDOPTS) $< $(LIBPLC) $(LIBNSPR) $(OS_LIBS) $(EXTRA_LIBS)
+ifeq ($(MOZ_OS2_TOOLS),VACPP)
+	$(LD) $(EXEFLAGS) $(LDOPTS) $< $(LIBPLC) $(LIBNSPR) $(OS_LIBS) $(EXTRA_LIBS)
 else
 	$(PURE) $(CC) $(XCFLAGS) $< $(LDOPTS) $(LIBPLC) $(LIBNSPR) $(EXTRA_LIBS) -o $@
 endif # OS/2

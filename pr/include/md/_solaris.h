@@ -41,7 +41,13 @@
 
 #define PR_LINKER_ARCH	"solaris"
 #define _PR_SI_SYSNAME	"SOLARIS"
+#ifdef sparc
 #define _PR_SI_ARCHITECTURE	"sparc"
+#elif defined(i386)
+#define _PR_SI_ARCHITECTURE	"x86"
+#else
+#error unknown processor
+#endif
 #define PR_DLL_SUFFIX		".so"
 
 #define _PR_VMBASE		0x30000000
@@ -103,10 +109,24 @@
 #endif
 #define _PR_HAVE_GETIPNODEBYNAME
 #define _PR_HAVE_GETIPNODEBYADDR
+#define _PR_HAVE_GETADDRINFO
 #define _PR_INET6_PROBE
 #define _PR_ACCEPT_INHERIT_NONBLOCK
-#ifndef _PR_INET6
+#ifdef _PR_INET6
+#define _PR_HAVE_INET_NTOP
+#else
 #define AF_INET6 26
+struct addrinfo {
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+    size_t ai_addrlen;
+    char *ai_canonname;
+    struct sockaddr *ai_addr;
+    struct addrinfo *ai_next;
+};
+#define AI_CANONNAME 0x0010
 #define AI_V4MAPPED 0x0001 
 #define AI_ALL      0x0002
 #define AI_ADDRCONFIG   0x0004
@@ -213,6 +233,7 @@ extern struct PRLock *_pr_schedLock;
 
 #define THREAD_KEY_T thread_key_t
 
+extern struct PRThread *_pr_attached_thread_tls();
 extern struct PRThread *_pr_current_thread_tls();
 extern struct _PRCPU *_pr_current_cpu_tls();
 extern struct PRThread *_pr_last_thread_tls();
@@ -221,6 +242,7 @@ extern THREAD_KEY_T threadid_key;
 extern THREAD_KEY_T cpuid_key;
 extern THREAD_KEY_T last_thread_key;
 
+#define _MD_GET_ATTACHED_THREAD() _pr_attached_thread_tls()
 #define _MD_CURRENT_THREAD() _pr_current_thread_tls()
 #define _MD_CURRENT_CPU() _pr_current_cpu_tls()
 #define _MD_LAST_THREAD() _pr_last_thread_tls()
@@ -336,7 +358,10 @@ extern PRStatus _MD_WakeupWaiter(struct PRThread *);
 NSPR_API(void) _MD_InitIO(void);
 #define _MD_INIT_IO _MD_InitIO
 
-#define _MD_INIT_CONTEXT(_thread, _sp, _main, status)
+#define _MD_INIT_CONTEXT(_thread, _sp, _main, status) \
+    PR_BEGIN_MACRO \
+    *status = PR_TRUE; \
+    PR_END_MACRO
 #define _MD_SWITCH_CONTEXT(_thread)
 #define _MD_RESTORE_CONTEXT(_newThread)
 
@@ -783,6 +808,8 @@ extern int gethostname (char *name, int namelen);
 PR_END_EXTERN_C
 
 #endif /* _PR_GLOBAL_THREADS_ONLY */
+
+extern void _MD_solaris_map_sendfile_error(int err);
 
 #endif /* nspr_solaris_defs_h___ */
 
