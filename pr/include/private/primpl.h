@@ -172,6 +172,14 @@ struct _PT_Notified
 		(thr->interrupt_blocked = 1)
 #define _PT_THREAD_UNBLOCK_INTERRUPT(thr)			\
 		(thr->interrupt_blocked = 0)
+
+#ifdef GC_LEAK_DETECTOR
+/* All threads are GCable. */
+#define _PT_IS_GCABLE_THREAD(thr) 1
+#else
+#define _PT_IS_GCABLE_THREAD(thr) ((thr)->state & PT_THREAD_GCABLE)
+#endif /* GC_LEAK_DETECTOR */
+
 /* 
 ** Possible values for thread's suspend field
 ** Note that the first two can be the same as they are really mutually exclusive,
@@ -1267,6 +1275,69 @@ extern PRStatus _PR_InvalidStatus(void);
 extern PRFileDesc *_PR_InvalidDesc(void);
 
 extern PRIOMethods _pr_faulty_methods;
+
+/*
+** The PR_NETADDR_SIZE macro can only be called on a PRNetAddr union
+** whose 'family' field is set.  It returns the size of the union
+** member corresponding to the specified address family.
+*/
+
+extern PRUintn _PR_NetAddrSize(const PRNetAddr* addr);
+
+#if defined(_PR_INET6)
+
+#define PR_NETADDR_SIZE(_addr) _PR_NetAddrSize(_addr)
+
+#elif defined(_PR_HAVE_MD_SOCKADDR_IN6)
+
+/*
+** Under the following conditions:
+** 1. _PR_INET6 is not defined;
+** 2. _PR_INET6_PROBE is defined;
+** 3. struct sockaddr_in6 has nonstandard fields at the end
+**    (e.g., on Solaris 8),
+** (_addr)->ipv6 is smaller than struct sockaddr_in6, and
+** hence we can't pass sizeof((_addr)->ipv6) to socket
+** functions such as connect because they would fail with
+** EINVAL.
+**
+** To pass the correct socket address length to socket
+** functions, define the macro _PR_HAVE_MD_SOCKADDR_IN6 and
+** define struct _md_sockaddr_in6 to be isomorphic to
+** struct sockaddr_in6.
+*/
+
+#if defined(XP_UNIX)
+#define PR_NETADDR_SIZE(_addr) 					\
+        ((_addr)->raw.family == PR_AF_INET		\
+        ? sizeof((_addr)->inet)					\
+        : ((_addr)->raw.family == PR_AF_INET6	\
+        ? sizeof(struct _md_sockaddr_in6)		\
+        : sizeof((_addr)->local)))
+#else
+#define PR_NETADDR_SIZE(_addr) 					\
+        ((_addr)->raw.family == PR_AF_INET		\
+        ? sizeof((_addr)->inet)					\
+        : sizeof(struct _md_sockaddr_in6)
+#endif /* defined(XP_UNIX) */
+
+#else
+
+#if defined(XP_UNIX)
+#define PR_NETADDR_SIZE(_addr) 					\
+        ((_addr)->raw.family == PR_AF_INET		\
+        ? sizeof((_addr)->inet)					\
+        : ((_addr)->raw.family == PR_AF_INET6	\
+        ? sizeof((_addr)->ipv6)					\
+        : sizeof((_addr)->local)))
+#else
+#define PR_NETADDR_SIZE(_addr) 					\
+        ((_addr)->raw.family == PR_AF_INET		\
+        ? sizeof((_addr)->inet)					\
+        : sizeof((_addr)->ipv6))
+#endif /* defined(XP_UNIX) */
+
+#endif /* defined(_PR_INET6) */
 
 extern PRStatus _PR_MapOptionName(
     PRSockOption optname, PRInt32 *level, PRInt32 *name);
