@@ -197,6 +197,16 @@ extern void *MALLOC(size_t);
 #endif
 #else
 #include "float.h"
+/*
+ * MacOS 10.2 defines the macro FLT_ROUNDS to an internal function
+ * which does not exist on 10.1.  We can safely #define it to 1 here
+ * to allow 10.2 builds to run on 10.1, since we can't use fesetround()
+ * (which does not exist on 10.1 either).
+ */
+#if defined(MACOS_DEPLOYMENT_TARGET) && (MACOS_DEPLOYMENT_TARGET < 100200)
+#undef FLT_ROUNDS
+#define FLT_ROUNDS 1
+#endif
 #endif
 #ifndef __MATH_H__
 #include "math.h"
@@ -1178,6 +1188,16 @@ void _PR_InitDtoa(void)
 {
 	freelist_lock = PR_NewLock();
 	p5s_lock = PR_NewLock();
+}
+
+void _PR_CleanupDtoa(void)
+{
+    PR_DestroyLock(freelist_lock);
+    freelist_lock = NULL;
+    PR_DestroyLock(p5s_lock);
+    p5s_lock = NULL;
+
+    /* FIXME: deal with freelist and p5s. */
 }
 
 #if defined(HAVE_WATCOM_BUG_1)

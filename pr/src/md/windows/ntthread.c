@@ -238,6 +238,13 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
     }
 
     thread->md.id = thread->id;
+    /*
+     * On windows, a thread is created with a thread priority of
+     * THREAD_PRIORITY_NORMAL.
+     */
+    if (priority != PR_PRIORITY_NORMAL) {
+        _PR_MD_SET_PRIORITY(&(thread->md), priority);
+    }
 
     /* Activate the thread */
     if ( ResumeThread( thread->md.handle ) != -1)
@@ -245,6 +252,21 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
 
     PR_SetError(PR_UNKNOWN_ERROR, GetLastError());
     return PR_FAILURE;
+}
+
+void
+_PR_MD_JOIN_THREAD(_MDThread *md)
+{
+    DWORD rv;
+
+    rv = WaitForSingleObject(md->handle, INFINITE);
+    PR_ASSERT(WAIT_OBJECT_0 == rv);
+}
+
+void
+_PR_MD_END_THREAD(void)
+{
+    _endthreadex(0);
 }
 
 void    

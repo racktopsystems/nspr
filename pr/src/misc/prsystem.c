@@ -58,7 +58,7 @@
 #endif
 
 #if defined(HPUX)
-#include <sys/mp.h>
+#include <sys/mpctl.h>
 #endif
 
 #if defined(XP_UNIX)
@@ -66,7 +66,7 @@
 #include <sys/utsname.h>
 #endif
 
-PR_IMPLEMENT(char) PR_GetDirectorySeparator()
+PR_IMPLEMENT(char) PR_GetDirectorySeparator(void)
 {
     return PR_DIRECTORY_SEPARATOR;
 }  /* PR_GetDirectorySeparator */
@@ -74,7 +74,7 @@ PR_IMPLEMENT(char) PR_GetDirectorySeparator()
 /*
 ** OBSOLETE -- the function name is misspelled.
 */
-PR_IMPLEMENT(char) PR_GetDirectorySepartor()
+PR_IMPLEMENT(char) PR_GetDirectorySepartor(void)
 {
 #if defined(DEBUG)
     static PRBool warn = PR_TRUE;
@@ -97,6 +97,12 @@ PR_IMPLEMENT(PRStatus) PR_GetSystemInfo(PRSysInfo cmd, char *buf, PRUint32 bufle
       case PR_SI_HOSTNAME:
         if (PR_FAILURE == _PR_MD_GETHOSTNAME(buf, (PRUintn)buflen))
             return PR_FAILURE;
+        /*
+         * On some platforms a system does not have a hostname and
+         * its IP address is returned instead.   The following code
+         * should be skipped on those platforms.
+         */
+#ifndef _PR_GET_HOST_ADDR_AS_NAME
         /* Return the unqualified hostname */
             while (buf[len] && (len < buflen)) {
                 if (buf[len] == '.') {
@@ -105,6 +111,7 @@ PR_IMPLEMENT(PRStatus) PR_GetSystemInfo(PRSysInfo cmd, char *buf, PRUint32 bufle
                 }
                 len += 1;
             }    
+#endif
          break;
 
       case PR_SI_SYSNAME:
@@ -150,7 +157,6 @@ PR_IMPLEMENT(PRStatus) PR_GetSystemInfo(PRSysInfo cmd, char *buf, PRUint32 bufle
 	  default:
 			PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
 			return PR_FAILURE;
-			break;
     }
     return PR_SUCCESS;
 }

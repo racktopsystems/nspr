@@ -81,15 +81,16 @@ static void AsyncIOCompletion (ExtendedParamBlock *pbAsyncPtr)
     if (_PR_MD_GET_INTSOFF()) {
         thread->md.missedIONotify = PR_TRUE;
         cpu->u.missed[cpu->where] |= _PR_MISSED_IO;
-        return;
+    } else {
+        _PR_INTSOFF(is);
+
+        thread->md.osErrCode = noErr;
+        DoneWaitingOnThisThread(thread);
+
+        _PR_FAST_INTSON(is);
     }
 
-    _PR_INTSOFF(is);
-
-    thread->md.osErrCode = noErr;
-    DoneWaitingOnThisThread(thread);
-
-    _PR_FAST_INTSON(is);
+    SignalIdleSemaphore();
 }
 
 void  _MD_SetError(OSErr oserror)
@@ -266,7 +267,7 @@ PRInt32 ReadWriteProc(PRFileDesc *fd, void *buf, PRUint32 bytes, IOOperation op)
 		   a 32 byte Ptr in the heap, so only do this once
 		*/
 		if (!sCompletionUPP)
-			sCompletionUPP = NewIOCompletionProc((IOCompletionProcPtr)&AsyncIOCompletion);
+			sCompletionUPP = NewIOCompletionUPP((IOCompletionProcPtr)&AsyncIOCompletion);
 			
 		/* grab the thread so we know which one to post to at completion */
 		pbAsync.thread	= me;
@@ -1905,14 +1906,12 @@ PRStatus _MD_CreateFileMap(PRFileMap *fmap, PRInt64 size)
 {
 #pragma unused (fmap, size)
 
-    PR_ASSERT(!"Not implemented");
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return PR_FAILURE;
 }
 
 PRInt32 _MD_GetMemMapAlignment(void)
 {
-    PR_ASSERT(!"Not implemented");
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return -1;
 }
@@ -1924,7 +1923,6 @@ void * _MD_MemMap(
 {
 #pragma unused (fmap, offset, len)
 
-    PR_ASSERT(!"Not implemented");
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return NULL;
 }
@@ -1933,7 +1931,6 @@ PRStatus _MD_MemUnmap(void *addr, PRUint32 len)
 {
 #pragma unused (addr, len)
 
-    PR_ASSERT(!"Not implemented");
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return PR_FAILURE;
 }
@@ -1942,7 +1939,6 @@ PRStatus _MD_CloseFileMap(PRFileMap *fmap)
 {
 #pragma unused (fmap)
 
-    PR_ASSERT(!"Not implemented");
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
     return PR_FAILURE;
 }
