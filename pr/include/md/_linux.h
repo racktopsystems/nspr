@@ -59,6 +59,19 @@
 #define HAVE_DLL
 #define USE_DLFCN
 
+#if defined(__i386__)
+#define _PR_HAVE_ATOMIC_OPS
+#define _MD_INIT_ATOMIC()
+extern PRInt32 _PR_x86_AtomicIncrement(PRInt32 *val);
+#define _MD_ATOMIC_INCREMENT          _PR_x86_AtomicIncrement
+extern PRInt32 _PR_x86_AtomicDecrement(PRInt32 *val);
+#define _MD_ATOMIC_DECREMENT          _PR_x86_AtomicDecrement
+extern PRInt32 _PR_x86_AtomicAdd(PRInt32 *ptr, PRInt32 val);
+#define _MD_ATOMIC_ADD                _PR_x86_AtomicAdd
+extern PRInt32 _PR_x86_AtomicSet(PRInt32 *val, PRInt32 newval);
+#define _MD_ATOMIC_SET                _PR_x86_AtomicSet
+#endif
+
 #define USE_SETJMP
 #if defined(__GLIBC__) && __GLIBC__ >= 2
 #define _PR_POLL_AVAILABLE
@@ -70,7 +83,8 @@
 #else
 #define _PR_NO_LARGE_FILES
 #endif
-#ifdef _PR_INET6
+#if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1)
+#define _PR_INET6
 #define _PR_HAVE_GETHOSTBYNAME2
 #define _PR_INET6_PROBE
 #endif
@@ -97,11 +111,11 @@ extern void _MD_CleanupBeforeExit(void);
  * On the PowerPC, the new style jmp_buf isn't used until glibc
  * 2.1.
  */
-#if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 1
+#if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1)
 #define _MD_GET_SP(_t) (_t)->md.context[0].__jmpbuf[JB_GPR1]
 #else
 #define _MD_GET_SP(_t) (_t)->md.context[0].__jmpbuf[0].__misc[0]
-#endif /* __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 1 */
+#endif /* glibc 2.1 or later */
 #define _MD_SET_FP(_t, val)
 #define _MD_GET_SP_PTR(_t) &(_MD_GET_SP(_t))
 #define _MD_GET_FP_PTR(_t) ((void *) 0)
