@@ -442,15 +442,9 @@ fi
 dnl ========================================================
 dnl Check for gcc -pipe support
 dnl ========================================================
-AC_ARG_ENABLE(gcc-pipe,
-    [  --disable-gcc-pipe      Disable -pipe check for gcc],
-    NO_GCC_PIPE=1)
-
 AC_MSG_CHECKING([for gcc -pipe support])
 
-if test -n "$NO_GCC_PIPE"; then
-    AC_MSG_RESULT([disabled])
-elif test -n "$GNU_CC" && test -n "$GNU_CXX" && test -n "$GNU_AS"; then
+if test -n "$GNU_CC" && test -n "$GNU_CXX" && test -n "$GNU_AS"; then
     echo '#include <stdio.h>' > dummy-hello.c
     echo 'int main() { printf("Hello World\n"); exit(0); }' >> dummy-hello.c
     ${CC} -S dummy-hello.c -o dummy-hello.s 2>&5
@@ -1696,8 +1690,8 @@ mips-sony-newsos*)
     MDCPUCFG_H=_os2.cfg
     RESOLVE_LINK_SYMBOLS=1
 
-    case "$target" in
-    *-os2_emx)
+    # EMX/GCC build
+    if test "$GNU_CC"; then
         AC_DEFINE(XP_OS2_EMX)
         AC_DEFINE(OS2)
         AR=emxomfar
@@ -1721,8 +1715,10 @@ mips-sony-newsos*)
           EXEFLAGS='-Zmtd -o $@'
           DSO_LDOPTS='-Zomf -Zdll -Zmt -Zcrtdll -Zlinker /NOO'
         fi
-        ;;
-    *-os2_vacpp)
+    fi
+    
+    # Visual Age C++ build
+    if test "$VACPP" = "yes"; then
         AC_DEFINE(XP_OS2_VACPP)
         AC_DEFINE(OS2,4)
         AC_DEFINE(TCPV40HDRS)
@@ -1758,9 +1754,7 @@ mips-sony-newsos*)
         fi
         LIBNSPR='$(dist_libdir)/nspr$(MOD_MAJOR_VERSION).$(LIB_SUFFIX)'
         LIBPLC='$(dist_libdir)/plc$(MOD_MAJOR_VERSION).$(LIB_SUFFIX)'
-        ;;
-    esac
-
+    fi
     ;;
 
 *)
