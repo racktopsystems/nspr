@@ -1741,8 +1741,13 @@ extern void _PR_InitMW(void);
 extern void _PR_InitRWLocks(void);
 extern void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me);
 extern void _PR_CleanupThread(PRThread *thread);
+extern void _PR_CleanupCallOnce(void);
+extern void _PR_CleanupMW(void);
+extern void _PR_CleanupDtoa(void);
+extern void _PR_ShutdownLinker(void);
 extern void _PR_CleanupEnv(void);
 extern void _PR_CleanupIO(void);
+extern void _PR_CleanupNet(void);
 extern void _PR_CleanupLayerCache(void);
 extern void _PR_CleanupStacks(void);
 extern void _PR_CleanupThreads(void);
@@ -1800,7 +1805,7 @@ extern PRFileDesc *_pr_stderr;
 ** and functions with macros that expand to the native thread
 ** types and functions on each platform.
 */
-#if defined(_PR_PTHREADS)
+#if defined(_PR_PTHREADS) && !defined(_PR_DCETHREADS)
 #define _PR_ZONE_ALLOCATOR
 #endif
 

@@ -509,8 +509,17 @@ if test "$OS_ARCH" = "IRIX64"; then
     OS_ARCH=IRIX
 fi
 
+if test "$OS_ARCH" = "AIX"; then
+    OS_RELEASE=`uname -v`.`uname -r`
+fi
+
+if test "$OS_ARCH" = "FreeBSD"; then
+    OS_RELEASE=`echo $OS_RELEASE | sed 's/-.*//'`
+fi
+
 if test "$OS_ARCH" = "Linux"; then
     OS_RELEASE=`echo $OS_RELEASE | sed 's/-.*//'`
+    OS_RELEASE=`echo $OS_RELEASE | awk -F\. '{ print $1 "." $2 }'`
 fi
 
 if test "$OS_ARCH" = "POSIX_for_OpenVMS_AXP"; then
@@ -745,6 +754,7 @@ case "$target" in
         _OPTIMIZE_FLAGS=-O2
         _DEBUG_FLAGS='-gdwarf-2 -O0'
         MKSHLIB='$(CCC) $(DSO_LDOPTS) -o $@'
+        AC_CHECK_LIB(bind, gethostbyaddr, [OS_LIBS="$OS_LIBS -lbind -lsocket"])
         ;;
     powerpc)
         CC=mwcc
@@ -829,7 +839,6 @@ case "$target" in
     AC_DEFINE(HAVE_BSD_FLOCK)
     CFLAGS="$CFLAGS -Wmost -fno-common"
     if echo $OS_TEST | grep -c 86 2>/dev/null; then
-        CFLAGS="$CFLAGS -mno-486"
         AC_DEFINE(i386)
         CPU_ARCH=i386
     else
@@ -876,8 +885,9 @@ case "$target" in
     else
         DLL_SUFFIX=so.1.0
     fi
+    MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
     DSO_CFLAGS=-fPIC
-    DSO_LDOPTS=-Bshareable
+    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
     MDCPUCFG_H=_freebsd.cfg
     PR_MD_CSRCS=freebsd.c
     ;;
@@ -890,7 +900,9 @@ case "$target" in
     DLL_SUFFIX=sl
     DSO_LDOPTS='-b +h $(notdir $@)'
     PR_MD_CSRCS=hpux.c
-    PR_MD_ASFILES=os_HPUX.s
+    if test "$OS_TEST" != "ia64"; then
+        PR_MD_ASFILES=os_HPUX.s
+    fi
     if test -n "$USE_64"; then
         MDCPUCFG_H=_hpux64.cfg
     else
@@ -929,7 +941,7 @@ case "$target" in
         AC_DEFINE(HAVE_INT_LOCALTIME_R)
     fi
 
-    if echo "$OS_RELEASE" | egrep '^(B.10.30|B.11.00|B.11.11)' >/dev/null; then
+    if echo "$OS_RELEASE" | egrep '^(B.10.30|B.11.00|B.11.11|B.11.20)' >/dev/null; then
         AC_DEFINE(HAVE_POINTER_LOCALTIME_R)
     fi
 
@@ -964,7 +976,7 @@ case "$target" in
         DEFAULT_IMPL_STRATEGY=_PTH
     fi
 
-    if echo "$OS_RELEASE" | egrep '^(B.11.00|B.11.11)' >/dev/null; then
+    if echo "$OS_RELEASE" | egrep '^(B.11.00|B.11.11|B.11.20)' >/dev/null; then
         AC_DEFINE(HPUX10)
         AC_DEFINE(HPUX11)
         AC_DEFINE(_LARGEFILE64_SOURCE)
@@ -972,11 +984,21 @@ case "$target" in
         AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
         if test -z "$GNU_CC"; then
             if test -z "$USE_64"; then
-                CFLAGS="$CFLAGS +DAportable +DS2.0"
-                CXXFLAGS="$CXXFLAGS +DAportable +DS2.0"
+                if test "$OS_TEST" = "ia64"; then
+                    CFLAGS="$CFLAGS +DD32"
+                    CXXFLAGS="$CXXFLAGS +DD32"
+                else
+                    CFLAGS="$CFLAGS +DAportable +DS2.0"
+                    CXXFLAGS="$CXXFLAGS +DAportable +DS2.0"
+                fi
             else
-                CFLAGS="$CFLAGS +DA2.0W +DS2.0"
-                CXXFLAGS="$CXXFLAGS +DA2.0W +DS2.0"
+                if test "$OS_TEST" = "ia64"; then
+                    CFLAGS="$CFLAGS +DD64"
+                    CXXFLAGS="$CXXFLAGS +DD64"
+                else
+                    CFLAGS="$CFLAGS +DA2.0W +DS2.0"
+                    CXXFLAGS="$CXXFLAGS +DA2.0W +DS2.0"
+                fi
             fi
         fi
         DEFAULT_IMPL_STRATEGY=_PTH
@@ -1108,7 +1130,6 @@ case "$target" in
     AC_DEFINE(_LARGEFILE64_SOURCE)
     AC_DEFINE(HAVE_FCNTL_FILE_LOCKING)
     AC_DEFINE(LINUX)
-    AC_DEFINE(linux)
     CFLAGS="$CFLAGS -ansi -Wall"
     CXXFLAGS="$CXXFLAGS -ansi -Wall"
     MDCPUCFG_H=_linux.cfg
@@ -1225,10 +1246,6 @@ case "$target" in
             LIBPLC='$(dist_libdir)/plc$(MOD_MAJOR_VERSION).$(LIB_SUFFIX)'
         fi
     fi # GNU_CC
-
-    if test -n "$USE_STATIC_TLS"; then
-        AC_DEFINE(_PR_USE_STATIC_TLS)
-    fi
 
     if test "$OS_TARGET" = "WINNT"; then
         AC_DEFINE(WINNT)
@@ -1648,6 +1665,11 @@ mips-sony-newsos*)
             DSO_LDOPTS="$DSO_LDOPTS -f "'$(ULTRASPARC_FILTER_LIBRARY)'
         fi
     fi
+    # Purify requires that binaries linked against nspr also
+    # be linked against -lrt (or -lposix4) so add it to OS_LIBS
+    _rev=`uname -r`
+    _librt=`echo $_rev 5.6 | awk '{ if ($1 > $2) print "-lrt"; else print "-lposix4" }'`
+    OS_LIBS="$OS_LIBS $_librt"
     ;;
 
 *-sco-sysv5*)
@@ -1674,8 +1696,8 @@ mips-sony-newsos*)
 
 *-os2*)
     AC_DEFINE(XP_OS2)
-    AC_DEFINE(BSD_SELECT)
     AC_DEFINE(XP_PC)
+    AC_DEFINE(BSD_SELECT)
     AC_DEFINE(_PR_GLOBAL_THREADS_ONLY)
     OBJ_SUFFIX=obj
     LIB_SUFFIX=lib
@@ -1986,8 +2008,15 @@ if test -n "$USE_PTHREADS"; then
    if test $? -eq 0; then
 	if test -z "`egrep -i '(unrecognize|unknown)' conftest.out | grep pthread`" && test -z "`egrep -i '(error|incorrect)' conftest.out`" ; then
 	    ac_cv_have_dash_pthread=yes
-	    CFLAGS="$CFLAGS -pthread"
-	    CXXFLAGS="$CXXFLAGS -pthread"
+		case "$target_os" in
+	    freebsd*)
+# Freebsd doesn't use -pthread for compiles, it uses them for linking
+            ;;
+	    *)
+            CFLAGS="$CFLAGS -pthread"
+            CXXFLAGS="$CXXFLAGS -pthread"
+            ;;
+        esac
 	fi
     fi
     rm -f conftest*
@@ -2018,7 +2047,17 @@ if test -n "$USE_PTHREADS"; then
             _PTHREAD_LDFLAGS=
         fi
 	    ;;
-    *-freebsd*|*-openbsd*|*-bsdi*|*-netbsd*)
+    *-freebsd*)
+	    AC_DEFINE(_REENTRANT)
+	    AC_DEFINE(_THREAD_SAFE)
+	    dnl -pthread links in -lc_r, so don't specify it explicitly.
+	    if test "$ac_cv_have_dash_pthread" = "yes"; then
+	        _PTHREAD_LDFLAGS="-pthread"
+	    else
+	        _PTHREAD_LDFLAGS="-lc_r"
+	    fi
+	    ;;
+    *-openbsd*|*-bsdi*|*-netbsd*)
 	    AC_DEFINE(_THREAD_SAFE)
 	    dnl -pthread links in -lc_r, so don't specify it explicitly.
 	    if test "$ac_cv_have_dash_pthread" = "yes"; then

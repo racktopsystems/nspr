@@ -338,27 +338,16 @@ static PRStatus PR_CALLBACK SocketConnectContinue(
 
 #elif defined(XP_OS2)
 
-    if (out_flags & PR_POLL_EXCEPT) {
-        int len = sizeof(err);
-        if (getsockopt(osfd, SOL_SOCKET, SO_ERROR, (char *) &err, &len)
-                < 0) {
-            _PR_MD_MAP_GETSOCKOPT_ERROR(sock_errno());
-            return PR_FAILURE;
-        }
-        if (err != 0) {
-            _PR_MD_MAP_CONNECT_ERROR(err);
-        } else {
-            PR_SetError(PR_UNKNOWN_ERROR, 0);
-        }
+    err = _MD_os2_get_nonblocking_connect_error(osfd);
+    if (err != 0) {
+        _PR_MD_MAP_CONNECT_ERROR(err);
         return PR_FAILURE;
     }
-
-    PR_ASSERT(out_flags & PR_POLL_WRITE);
     return PR_SUCCESS;
 
 #elif defined(XP_MAC)
 
-    err = _MD_mac_get_nonblocking_connect_error(osfd);
+    err = _MD_mac_get_nonblocking_connect_error(fd);
     if (err == -1)
         return PR_FAILURE;
 	else     
@@ -366,13 +355,23 @@ static PRStatus PR_CALLBACK SocketConnectContinue(
 
 #elif defined(XP_BEOS)
 
+#ifdef BONE_VERSION  /* bug 122364 */
+    /* temporary workaround until getsockopt(SO_ERROR) works in BONE */
+    if (out_flags & PR_POLL_EXCEPT) {
+        PR_SetError(PR_CONNECT_REFUSED_ERROR, 0);
+        return PR_FAILURE;
+    }
+    PR_ASSERT(out_flags & PR_POLL_WRITE);
+    return PR_SUCCESS;
+#else
     err = _MD_beos_get_nonblocking_connect_error(fd);
     if( err != 0 ) {
-	_PR_MD_MAP_CONNECT_ERROR(err);
-	return PR_FAILURE;
+        _PR_MD_MAP_CONNECT_ERROR(err);
+        return PR_FAILURE;
     }
     else
-	return PR_SUCCESS;
+        return PR_SUCCESS;
+#endif /* BONE_VERSION */
 
 #else
     PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
@@ -1396,7 +1395,7 @@ PR_IMPLEMENT(PRStatus) PR_NewTCPSocketPair(PRFileDesc *f[])
      */
     SOCKET listenSock;
     SOCKET osfd[2];
-    struct sockaddr_in selfAddr;
+    struct sockaddr_in selfAddr, peerAddr;
     int addrLen;
 
     if (!_pr_initialized) _PR_ImplicitInitialization();
@@ -1440,8 +1439,22 @@ PR_IMPLEMENT(PRStatus) PR_NewTCPSocketPair(PRFileDesc *f[])
             addrLen) == SOCKET_ERROR) {
         goto failed;
     }
-    osfd[1] = accept(listenSock, NULL, NULL);
+    /*
+     * A malicious local process may connect to the listening
+     * socket, so we need to verify that the accepted connection
+     * is made from our own socket osfd[0].
+     */
+    if (getsockname(osfd[0], (struct sockaddr *) &selfAddr,
+            &addrLen) == SOCKET_ERROR) {
+        goto failed;
+    }
+    osfd[1] = accept(listenSock, (struct sockaddr *) &peerAddr, &addrLen);
     if (osfd[1] == INVALID_SOCKET) {
+        goto failed;
+    }
+    if (peerAddr.sin_port != selfAddr.sin_port) {
+        /* the connection we accepted is not from osfd[0] */
+        PR_SetError(PR_INSUFFICIENT_RESOURCES_ERROR, 0);
         goto failed;
     }
     closesocket(listenSock);
@@ -1480,7 +1493,7 @@ failed:
      * default implementation
      */
     PRFileDesc *listenSock;
-    PRNetAddr selfAddr;
+    PRNetAddr selfAddr, peerAddr;
     PRUint16 port;
 
     f[0] = f[1] = NULL;
@@ -1518,8 +1531,21 @@ failed:
             == PR_FAILURE) {
         goto failed;
     }
-    f[1] = PR_Accept(listenSock, NULL, PR_INTERVAL_NO_TIMEOUT);
+    /*
+     * A malicious local process may connect to the listening
+     * socket, so we need to verify that the accepted connection
+     * is made from our own socket f[0].
+     */
+    if (PR_GetSockName(f[0], &selfAddr) == PR_FAILURE) {
+        goto failed;
+    }
+    f[1] = PR_Accept(listenSock, &peerAddr, PR_INTERVAL_NO_TIMEOUT);
     if (f[1] == NULL) {
+        goto failed;
+    }
+    if (peerAddr.inet.port != selfAddr.inet.port) {
+        /* the connection we accepted is not from f[0] */
+        PR_SetError(PR_INSUFFICIENT_RESOURCES_ERROR, 0);
         goto failed;
     }
     PR_Close(listenSock);
@@ -1532,6 +1558,9 @@ failed:
     if (f[0]) {
         PR_Close(f[0]);
     }
+    if (f[1]) {
+        PR_Close(f[1]);
+    }
     return PR_FAILURE;
 #endif
 }
@@ -1539,20 +1568,14 @@ failed:
 PR_IMPLEMENT(PRInt32)
 PR_FileDesc2NativeHandle(PRFileDesc *fd)
 {
-	if (fd) {
-		/*
-		 * The fd may be layered.  Chase the links to the
-		 * bottom layer to get the osfd.
-		 */
-		PRFileDesc *bottom = fd;
-		while (bottom->lower != NULL) {
-			bottom = bottom->lower;
-		}
-		return bottom->secret->md.osfd;
-	} else {
-		PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
-		return -1;
-	}
+    if (fd) {
+        fd = PR_GetIdentitiesLayer(fd, PR_NSPR_IO_LAYER);
+    }
+    if (!fd) {
+        PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+        return -1;
+    }
+    return fd->secret->md.osfd;
 }
 
 PR_IMPLEMENT(void)

@@ -168,7 +168,6 @@ PRInt32
 _PR_MD_BIND(PRFileDesc *fd, const PRNetAddr *addr, PRUint32 addrlen)
 {
     PRInt32 rv;
-    int one = 1;
 
     rv = bind(fd->secret->md.osfd, (const struct sockaddr *)&(addr->inet), addrlen);
 
@@ -180,6 +179,20 @@ _PR_MD_BIND(PRFileDesc *fd, const PRNetAddr *addr, PRUint32 addrlen)
     return 0;
 }
 
+PRInt32
+_PR_MD_LISTEN(PRFileDesc *fd, PRIntn backlog)
+{
+    PRInt32 rv;
+
+    rv = listen(fd->secret->md.osfd, backlog);
+
+    if (rv == SOCKET_ERROR)  {
+        _PR_MD_MAP_DEFAULT_ERROR(WSAGetLastError());
+        return -1;
+    }
+
+    return 0;
+}
 
 PRInt32
 _PR_MD_RECV(PRFileDesc *fd, void *buf, PRInt32 amount, PRIntn flags, 
@@ -461,6 +474,7 @@ static PRInt32 socket_io_wait(
     struct timeval tv;
     PRThread *me = _PR_MD_CURRENT_THREAD();
     PRIntervalTime elapsed, remaining;
+    PRBool wait_for_remaining;
     fd_set rd_wr, ex;
     int err, len;
 
@@ -547,8 +561,10 @@ static PRInt32 socket_io_wait(
                  * so that there is an upper limit on the delay
                  * before the interrupt bit is checked.
                  */
+                wait_for_remaining = PR_TRUE;
                 tv.tv_sec = PR_IntervalToSeconds(remaining);
                 if (tv.tv_sec > _PR_INTERRUPT_CHECK_INTERVAL_SECS) {
+                    wait_for_remaining = PR_FALSE;
                     tv.tv_sec = _PR_INTERRUPT_CHECK_INTERVAL_SECS;
                     tv.tv_usec = 0;
                 } else {
@@ -618,8 +634,12 @@ static PRInt32 socket_io_wait(
                  */
                 if (rv == 0 )
                 {
-                    elapsed = PR_SecondsToInterval(tv.tv_sec) 
-                                + PR_MicrosecondsToInterval(tv.tv_usec);
+                    if (wait_for_remaining) {
+                        elapsed = remaining;
+                    } else {
+                        elapsed = PR_SecondsToInterval(tv.tv_sec) 
+                                    + PR_MicrosecondsToInterval(tv.tv_usec);
+                    }
                     if (elapsed >= remaining) {
                         PR_SetError(PR_IO_TIMEOUT_ERROR, 0);
                         rv = -1;
