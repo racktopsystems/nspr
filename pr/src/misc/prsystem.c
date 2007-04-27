@@ -134,8 +134,12 @@ PR_IMPLEMENT(PRStatus) PR_GetSystemInfo(PRSysInfo cmd, char *buf, PRUint32 bufle
     switch(cmd)
     {
       case PR_SI_HOSTNAME:
+      case PR_SI_HOSTNAME_UNTRUNCATED:
         if (PR_FAILURE == _PR_MD_GETHOSTNAME(buf, (PRUintn)buflen))
             return PR_FAILURE;
+
+        if (cmd == PR_SI_HOSTNAME_UNTRUNCATED)
+            break;
         /*
          * On some platforms a system does not have a hostname and
          * its IP address is returned instead.   The following code
@@ -278,20 +282,20 @@ PR_IMPLEMENT(PRInt32) PR_GetNumberOfProcessors( void )
 */
 PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
 {
-    PRUint64 bytes = LL_ZERO;
+    PRUint64 bytes = 0;
 
 #if defined(LINUX) || defined(SOLARIS)
 
     long pageSize = sysconf(_SC_PAGESIZE);
     long pageCount = sysconf(_SC_PHYS_PAGES);
-    LL_I2L(bytes, pageSize * pageCount);
+    bytes = (PRUint64) pageSize * pageCount;
 
 #elif defined(HPUX)
 
     struct pst_static info;
     int result = pstat_getstatic(&info, sizeof(info), 1, 0);
     if (result == 1)
-        LL_I2L(bytes, info.physical_memory * info.page_size);
+        bytes = (PRUint64) info.physical_memory * info.page_size;
 
 #elif defined(DARWIN)
 
@@ -303,7 +307,7 @@ PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
                            (host_info_t) &hInfo,
                            &count);
     if (result == KERN_SUCCESS)
-        LL_I2L(bytes, hInfo.memory_size);
+        bytes = hInfo.memory_size;
 
 #elif defined(WIN32)
 
@@ -319,16 +323,16 @@ PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
             memStat.dwLength = sizeof(memStat);
 
             if (globalMemory(&memStat))
-                LL_UI2L(bytes, memStat.ullTotalPhys);
+                bytes = memStat.ullTotalPhys;
         }
     }
 
-    if (LL_EQ(bytes, LL_ZERO)) {
+    if (!bytes) {
         /* Fall back to the older API. */
         MEMORYSTATUS memStat;
         memset(&memStat, 0, sizeof(memStat));
         GlobalMemoryStatus(&memStat);
-        LL_I2L(bytes, memStat.dwTotalPhys);
+        bytes = memStat.dwTotalPhys;
     }
 
 #elif defined(OS2)
@@ -338,7 +342,7 @@ PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
                     QSV_TOTPHYSMEM,
                     &ulPhysMem,
                     sizeof(ulPhysMem));
-    LL_I2L(bytes, ulPhysMem);
+    bytes = ulPhysMem;
 
 #elif defined(AIX)
 
@@ -346,9 +350,7 @@ PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
         int how_many;
         struct CuAt *obj = getattr("sys0", "realmem", 0, &how_many);
         if (obj != NULL) {
-            PRUint64 kbytes;
-            LL_I2L(kbytes, atoi(obj->value));
-            LL_MUL(bytes, kbytes, 1024);
+            bytes = (PRUint64) atoi(obj->value) * 1024;
             free(obj);
         }
         odm_terminate();
