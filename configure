@@ -1449,12 +1449,12 @@ echo "configure:1447: checking whether the $host compiler ($HOST_CC $HOST_CFLAGS
 #include "confdefs.h"
 
 int main() {
-return(0);
+return 0;
 ; return 0; }
 EOF
 if { (eval echo configure:1456: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
-  ac_cv_prog_host_cc_works=1 echo "$ac_t""yes" 1>&6
+  echo "$ac_t""yes" 1>&6
 else
   echo "configure: failed program was:" >&5
   cat conftest.$ac_ext >&5
