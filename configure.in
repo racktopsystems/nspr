@@ -2553,8 +2553,8 @@ case $target in
     ;;
 *)
     AC_CHECK_LIB(dl, dlopen,
-        AC_CHECK_HEADER(dlfcn.h,
-            OS_LIBS="-ldl $OS_LIBS"))
+        [AC_CHECK_HEADER(dlfcn.h,
+            OS_LIBS="-ldl $OS_LIBS")])
     ;;
 esac
 
