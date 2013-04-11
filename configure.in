@@ -271,7 +271,6 @@ case "$target" in
     fi
 
     AC_DEFINE(ANDROID)
-    AC_DEFINE_UNQUOTED(ANDROID_VERSION, $android_version)
     ;;
 esac
 fi

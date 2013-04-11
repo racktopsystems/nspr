@@ -1019,10 +1019,6 @@ echo "configure:961: checking for android platform directory" >&5
 #define ANDROID 1
 EOF
 
-    cat >> confdefs.h <<EOF
-#define ANDROID_VERSION $android_version
-EOF
-
     ;;
 esac
 fi
