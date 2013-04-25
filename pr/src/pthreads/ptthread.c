@@ -715,7 +715,8 @@ PR_IMPLEMENT(void) PR_SetThreadPriority(PRThread *thred, PRThreadPriority newPri
              * because adjusting the nice value might be permitted for certain
              * ranges but not for others. */
             PR_LOG(_pr_thread_lm, PR_LOG_MIN,
-                ("PR_SetThreadPriority: no thread scheduling privilege"));
+                ("PR_SetThreadPriority: setpriority failed with error %d",
+                 errno));
         }
     }
 #endif
