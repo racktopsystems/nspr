@@ -4645,6 +4645,19 @@ PR_IMPLEMENT(void) PR_ChangeFileDescNativeHandle(PRFileDesc *fd,
     if (fd) fd->secret->md.osfd = handle;
 }  /*  PR_ChangeFileDescNativeHandle*/
 
+PR_IMPLEMENT(PRInt32) PR_SocketPollingStatus(PRFileDesc *fd, PRInt16 in_flags,
+    PRInt16 *out_flags)
+{
+    if (!_pr_initialized) _PR_ImplicitInitialization();
+    if (fd == NULL)
+    {
+         PR_SetError(PR_BAD_DESCRIPTOR_ERROR, 0);
+         return -1;
+    }
+    /* Should this refuse a non-socket fd? */
+    return (fd->methods->poll)(fd, in_flags, out_flags);
+}
+
 PR_IMPLEMENT(PRStatus) PR_LockFile(PRFileDesc *fd)
 {
     PRStatus status = PR_SUCCESS;
