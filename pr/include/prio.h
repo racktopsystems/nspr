@@ -2000,6 +2000,33 @@ NSPR_API(PRStatus) PR_SetPollableEvent(PRFileDesc *event);
 
 NSPR_API(PRStatus) PR_WaitForPollableEvent(PRFileDesc *event);
 
+
+#ifdef _WIN64
+typedef __int64 PROsfd;
+#else
+typedef PRInt32 PROsfd;
+#endif
+
+/*
+ ************************************************************************
+ * FUNCTION:    PR_SocketPollingHandle
+ * DESCRIPTION:
+ * Return an OS native file handle of a socket, suitable for poll() or select().
+ * The caller must not use the file handle for anything else.
+ *
+ * INPUTS:
+ *     PRFileDesc *fd
+ *       Points to a PRFileDesc object representing a socket.
+ * OUTPUTS:    None
+ * RETURN:
+ *     PROsfd
+ *        An OS native file handle suitable for poll() or select() (if provided
+ *        by the OS), or -1 on failure.  The handle must not be closed by the
+ *        caller, it will be automatically invalidated by PR_Close(fd).
+ ************************************************************************
+ */
+NSPR_API(PROsfd) PR_SocketPollingHandle(PRFileDesc *fd);
+
 PR_END_EXTERN_C
 
 #endif /* prio_h___ */
