@@ -153,7 +153,7 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
     {
         a = pool->current;
         do {
-            if ( a->avail +nb <= a->limit )  {
+            if ( nb <= a->limit - a->avail )  {
                 pool->current = a;
                 rp = (char *)a->avail;
                 a->avail += nb;
@@ -171,7 +171,7 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
             return(0);
 
         for ( a = arena_freelist, p = NULL; a != NULL ; p = a, a = a->next ) {
-            if ( a->base +nb <= a->limit )  {
+            if ( nb <= a->limit - a->base )  {
                 if ( p == NULL )
                     arena_freelist = a->next;
                 else
