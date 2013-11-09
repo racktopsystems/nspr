@@ -1548,14 +1548,6 @@ PR_FileDesc2NativeHandle(PRFileDesc *fd)
     return fd->secret->md.osfd;
 }
 
-PR_IMPLEMENT(PROsfd)
-PR_SocketPollingHandle(PRFileDesc *fd)
-{
-    if (!_pr_initialized) _PR_ImplicitInitialization();
-    /* Should this refuse a non-socket fd? */
-    return PR_FileDesc2NativeHandle(fd);
-}
-
 PR_IMPLEMENT(void)
 PR_ChangeFileDescNativeHandle(PRFileDesc *fd, PROsfd handle)
 {

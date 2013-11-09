@@ -20,6 +20,12 @@ PR_BEGIN_EXTERN_C
 /************************************************************************/
 /************************************************************************/
 
+#ifdef _WIN64
+typedef __int64 PROsfd;
+#else
+typedef PRInt32 PROsfd;
+#endif
+
 /* Return the method tables for files, tcp sockets and udp sockets */
 NSPR_API(const PRIOMethods*)    PR_GetFileMethods(void);
 NSPR_API(const PRIOMethods*)    PR_GetTCPMethods(void);

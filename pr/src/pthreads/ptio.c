@@ -4632,13 +4632,6 @@ PR_IMPLEMENT(PRInt32) PR_FileDesc2NativeHandle(PRFileDesc *bottom)
     return osfd;
 }  /* PR_FileDesc2NativeHandle */
 
-PR_IMPLEMENT(PROsfd) PR_SocketPollingHandle(PRFileDesc *fd)
-{
-    if (!_pr_initialized) _PR_ImplicitInitialization();
-    /* Should this refuse a non-socket fd? */
-    return PR_FileDesc2NativeHandle(fd);
-}  /* PR_SocketPollingHandle */
-
 PR_IMPLEMENT(void) PR_ChangeFileDescNativeHandle(PRFileDesc *fd,
     PRInt32 handle)
 {
