@@ -2011,12 +2011,8 @@ typedef PRInt32 PROsfd;
  ************************************************************************
  * FUNCTION:    PR_SocketPollingHandle
  * DESCRIPTION:
- * Return an OS native file handle of a socket, suitable for poll() or select()
- * together with flags based on the result of PR_SocketPollingStatus().
+ * Return an OS native file handle of a socket, suitable for poll() or select().
  * The caller must not use the file handle for anything else.
- *
- * This function is intended for easier integration of PRFileDesc objects into
- * a non-NSPR event loop; native NSPR applications do not need to call this.
  *
  * INPUTS:
  *     PRFileDesc *fd
@@ -2030,36 +2026,6 @@ typedef PRInt32 PROsfd;
  ************************************************************************
  */
 NSPR_API(PROsfd) PR_SocketPollingHandle(PRFileDesc *fd);
-
-/*
- ************************************************************************
- * FUNCTION:    PR_SocketPollingStatus
- * DESCRIPTION:
- * Check whether specified operation is ready on a socket, and if not,
- * what operation to wait for on the underlying OS socket returned by
- * PR_SocketPollingHandle() (which can differ from the application-requested
- * operation, e.g. during TLS renegotiation).
- *
- * This function is intended for easier integration of PRFileDesc objects into
- * a non-NSPR event loop; native NSPR applications do not need to call this.
- *
- * INPUTS:
- *     PRFileDesc *fd
- *       Points to a PRFileDesc object representing a socket.
- *     PRInt16 in_flags
- *       PR_POLL_* flags for operations the caller wants to wait for.
- * OUTPUTS:
- *     PRInt16 *out_flags
- *       PR_POLL_* flags for operations that are already available.
- * RETURN:
- *     PRInt32
- *       PR_POLL_* flags (NOT native POLL* flags) for operations the caller
- *       should wait for on the underlying OS socket.  On failure, the value
- *       is -1.
- ************************************************************************
- */
-NSPR_API(PRInt32) PR_SocketPollingStatus(PRFileDesc *fd, PRInt16 in_flags,
-    PRInt16 *out_flags);
 
 PR_END_EXTERN_C
 
