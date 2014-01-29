@@ -1446,9 +1446,19 @@ struct PRCondVar {
 struct PRMonitor {
     const char* name;           /* monitor name for debugging */
 #if defined(_PR_PTHREADS)
-    PRLock lock;                /* the lock structure */
-    pthread_t owner;            /* the owner of the lock or invalid */
-    PRCondVar *cvar;            /* condition variable queue */
+    PRIntn notifyTimes;         /* number of pending notifies for waitCV.
+                                 * The special value -1 means a broadcast
+                                 * (PR_NotifyAll). */
+
+    pthread_mutex_t lock;       /* lock is only held when accessing fields
+                                 * of the PRMonitor, instead of being held
+                                 * while the monitor is entered. The only
+                                 * exception is notifyTimes, which is
+                                 * protected by the monitor. */
+    pthread_t owner;            /* the owner of the monitor or invalid */
+    pthread_cond_t entryCV;     /* for threads waiting to enter the monitor */
+
+    pthread_cond_t waitCV;      /* for threads waiting on the monitor */
 #else  /* defined(_PR_PTHREADS) */
     PRCondVar *cvar;            /* associated lock and condition variable queue */
 #endif /* defined(_PR_PTHREADS) */
