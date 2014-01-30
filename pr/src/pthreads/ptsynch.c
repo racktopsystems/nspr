@@ -553,6 +553,7 @@ PR_IMPLEMENT(PRIntn) PR_GetMonitorEntryCount(PRMonitor *mon)
 
 PR_IMPLEMENT(void) PR_AssertCurrentThreadInMonitor(PRMonitor *mon)
 {
+#if defined(DEBUG) || defined(FORCE_PR_ASSERT)
     PRIntn rv;
 
     rv = pthread_mutex_lock(&mon->lock);
@@ -561,6 +562,7 @@ PR_IMPLEMENT(void) PR_AssertCurrentThreadInMonitor(PRMonitor *mon)
               pthread_equal(mon->owner, pthread_self()));
     rv = pthread_mutex_unlock(&mon->lock);
     PR_ASSERT(0 == rv);
+#endif
 }
 
 PR_IMPLEMENT(void) PR_EnterMonitor(PRMonitor *mon)
