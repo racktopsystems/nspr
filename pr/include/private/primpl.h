@@ -1565,6 +1565,8 @@ struct PRThread {
 
 #if defined(_PR_PTHREADS)
     pthread_t id;                   /* pthread identifier for the thread */
+    PRBool idSet;                   /* whether 'id' has been set. Protected by
+                                     * pt_book.ml. */
 #ifdef _PR_NICE_PRIORITY_SCHEDULING
     pid_t tid;                      /* Linux-specific kernel thread ID */
 #endif
