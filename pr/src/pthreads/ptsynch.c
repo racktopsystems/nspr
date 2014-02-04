@@ -169,6 +169,9 @@ PR_IMPLEMENT(void) PR_DestroyLock(PRLock *lock)
 
 PR_IMPLEMENT(void) PR_Lock(PRLock *lock)
 {
+    /* Nb: PR_Lock must not call PR_GetCurrentThread to access the |id| or
+     * |tid| field of the current thread's PRThread structure because
+     * _pt_root calls PR_Lock before setting thred->id and thred->tid. */
     PRIntn rv;
     PR_ASSERT(lock != NULL);
     rv = pthread_mutex_lock(&lock->mutex);
