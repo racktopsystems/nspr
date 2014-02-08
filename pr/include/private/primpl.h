@@ -1459,6 +1459,14 @@ struct PRMonitor {
     pthread_cond_t entryCV;     /* for threads waiting to enter the monitor */
 
     pthread_cond_t waitCV;      /* for threads waiting on the monitor */
+    PRInt32 refCount;           /* reference count, an atomic variable.
+                                 * PR_NewMonitor adds a reference to the
+                                 * newly created PRMonitor, and
+                                 * PR_DestroyMonitor releases that reference.
+                                 * PR_ExitMonitor adds a reference before
+                                 * unlocking the internal lock if it needs to
+                                 * signal entryCV, and releases the reference
+                                 * after signaling entryCV. */
 #else  /* defined(_PR_PTHREADS) */
     PRCondVar *cvar;            /* associated lock and condition variable queue */
 #endif /* defined(_PR_PTHREADS) */

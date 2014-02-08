@@ -503,6 +503,7 @@ PR_IMPLEMENT(PRMonitor*) PR_NewMonitor(void)
 
     mon->notifyTimes = 0;
     mon->entryCount = 0;
+    mon->refCount = 1;
     return mon;
 
 error3:
@@ -526,14 +527,18 @@ PR_IMPLEMENT(PRMonitor*) PR_NewNamedMonitor(const char* name)
 PR_IMPLEMENT(void) PR_DestroyMonitor(PRMonitor *mon)
 {
     int rv;
+
     PR_ASSERT(mon != NULL);
-    rv = pthread_cond_destroy(&mon->waitCV); PR_ASSERT(0 == rv);
-    rv = pthread_cond_destroy(&mon->entryCV); PR_ASSERT(0 == rv);
-    rv = pthread_mutex_destroy(&mon->lock); PR_ASSERT(0 == rv);
+    if (PR_ATOMIC_DECREMENT(&mon->refCount) == 0)
+    {
+        rv = pthread_cond_destroy(&mon->waitCV); PR_ASSERT(0 == rv);
+        rv = pthread_cond_destroy(&mon->entryCV); PR_ASSERT(0 == rv);
+        rv = pthread_mutex_destroy(&mon->lock); PR_ASSERT(0 == rv);
 #if defined(DEBUG)
-    memset(mon, 0xaf, sizeof(PRMonitor));
+        memset(mon, 0xaf, sizeof(PRMonitor));
 #endif
-    PR_Free(mon);    
+        PR_Free(mon);
+    }
 }  /* PR_DestroyMonitor */
 
 /* The GC uses this; it is quite arguably a bad interface.  I'm just 
@@ -626,15 +631,21 @@ PR_IMPLEMENT(PRStatus) PR_ExitMonitor(PRMonitor *mon)
         notifyEntryWaiter = PR_TRUE;
         notifyTimes = mon->notifyTimes;
         mon->notifyTimes = 0;
+        /* We will access the members of 'mon' after unlocking mon->lock.
+         * Add a reference. */
+        PR_ATOMIC_INCREMENT(&mon->refCount);
     }
     rv = pthread_mutex_unlock(&mon->lock);
     PR_ASSERT(0 == rv);
-    if (notifyTimes)
-        pt_PostNotifiesFromMonitor(&mon->waitCV, notifyTimes);
     if (notifyEntryWaiter)
     {
+        if (notifyTimes)
+            pt_PostNotifiesFromMonitor(&mon->waitCV, notifyTimes);
         rv = pthread_cond_signal(&mon->entryCV);
         PR_ASSERT(0 == rv);
+        /* We are done accessing the members of 'mon'. Release the
+         * reference. */
+        PR_DestroyMonitor(mon);
     }
     return PR_SUCCESS;
 }  /* PR_ExitMonitor */
