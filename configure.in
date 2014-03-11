@@ -67,7 +67,7 @@ HOST_CFLAGS="${HOST_CFLAGS=}"
 HOST_LDFLAGS="${HOST_LDFLAGS=}"
 
 case "$target" in
-*-cygwin*|*-mingw*)
+*-cygwin*|*-mingw*|*-msys*)
     # Check to see if we are really running in a msvc environemnt
     _WIN32_MSVC=
     AC_CHECK_PROGS(CC, cl)
@@ -556,7 +556,7 @@ if test -n "$MOZ_DEBUG"; then
     beos*)
         DEFINES="$DEFINES -DDEBUG_${USER}"
         ;;
-    msvc*|mks*|cygwin*|mingw*|wince*|winmo*|os2*)
+    msvc*|mks*|cygwin*|mingw*|msys*|wince*|winmo*|os2*)
         DEFINES="$DEFINES -DDEBUG_`echo ${USERNAME} | sed -e 's| |_|g'`"
         ;;
     *) 
@@ -967,12 +967,14 @@ Windows_NT)
         CPU_ARCH=x86
     fi
     ;;
-CYGWIN_NT*|MINGW*_NT*)
+CYGWIN_NT*|MINGW*_NT*|MSYS_NT*)
 #
 # If uname -s returns "CYGWIN_NT-4.0", we assume that we are using
 # the uname.exe in the Cygwin tools.
-# If uname -s returns MINGW32_NT-5.1, we assume that we are using
+# If uname -s returns "MINGW32_NT-5.1", we assume that we are using
 # the uname.exe in the MSYS tools.
+# If uname -s returns "MSYS_NT-6.3", we assume that we are using
+# the uname.exe in the MSYS2 tools.
 #
     OS_RELEASE=`expr $OS_ARCH : '.*NT-\(.*\)'`
     OS_ARCH=WINNT
@@ -1206,7 +1208,7 @@ dnl ========================================================
 dnl Override of system specific host options
 dnl ========================================================
 case "$host" in
-*-mingw*)
+*-mingw*|*-msys*)
     NSINSTALL=nsinstall
     ;;
 *-cygwin*|*-msvc*|*-mks*|*-wince*|*-winmo*)
@@ -1906,7 +1908,7 @@ tools are selected during the Xcode/Developer Tools installation.])
     esac    
     ;;
 
-*-mingw*|*-cygwin*|*-msvc*|*-mks*)
+*-mingw*|*-msys*|*-cygwin*|*-msvc*|*-mks*)
     AC_DEFINE(XP_PC)
     AC_DEFINE(WIN32)
     PR_MD_ARCH_DIR=windows
@@ -3011,7 +3013,7 @@ case "$target" in
         AC_DEFINE(_PR_LOCAL_THREADS_ONLY)
     fi
     ;;
-*-mingw*|*-cygwin*|*-msvc*|*-mks*|*-wince*|*-winmo*|*-os2*|*-beos*)
+*-mingw*|*-msys*|*-cygwin*|*-msvc*|*-mks*|*-wince*|*-winmo*|*-os2*|*-beos*)
     dnl win32, wince, os2 & beos cannot use pthreads
     USE_PTHREADS=
     _PTHREAD_LDFLAGS=
