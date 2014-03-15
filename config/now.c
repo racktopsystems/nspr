@@ -19,7 +19,7 @@ int main(int argc, char **argv)
      * of this program and omit the library build time
      * in PRVersionDescription.
      */
-#elif defined(_WIN32)
+#elif defined(_MSC_VER)
     __int64 now;
     time_t sec;
 
