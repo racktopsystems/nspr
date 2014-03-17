@@ -553,10 +553,10 @@ if test -n "$MOZ_DEBUG"; then
     beos*)
         DEFINES="$DEFINES -DDEBUG_${USER}"
         ;;
-    mks*|cygwin*|mingw*|msys*|wince*|winmo*|os2*)
+    mks*|cygwin*|mingw*|msys*|os2*)
         DEFINES="$DEFINES -DDEBUG_`echo ${USERNAME} | sed -e 's| |_|g'`"
         ;;
-    *) 
+    *)
         DEFINES="$DEFINES -DDEBUG_`$WHOAMI`"
         ;;
     esac
@@ -856,8 +856,6 @@ if test -n "$CROSS_COMPILE"; then
         linux*)       OS_ARCH=Linux ;;
         solaris*)     OS_ARCH=SunOS OS_RELEASE=5 ;;
         mingw*)       OS_ARCH=WINNT CPU_ARCH=x86 ;;
-        wince*)       OS_ARCH=WINCE ;;
-        winmo*)       OS_ARCH=WINCE ;;
         darwin*)      OS_ARCH=Darwin ;;
         riscos*)      OS_ARCH=RISCOS ;;
     esac
@@ -1198,7 +1196,7 @@ case "$host" in
 *-mingw*|*-msys*)
     NSINSTALL=nsinstall
     ;;
-*-cygwin*|*-mks*|*-wince*|*-winmo*)
+*-cygwin*|*-mks*)
     NSINSTALL='$(CYGWIN_WRAPPER) nsinstall'
     if test `echo "${PATH}" | grep -c \;` = 0; then
         CYGWIN_WRAPPER='sh $(topsrcdir)/build/cygwin-wrapper'
@@ -2091,36 +2089,6 @@ tools are selected during the Xcode/Developer Tools installation.])
     esac
     ;;
 
-*-wince*|*-winmo*)
-    AC_DEFINE(XP_PC)
-    AC_DEFINE(WIN32)
-    AC_DEFINE(WINCE)
-    AC_DEFINE(_PR_GLOBAL_THREADS_ONLY)
-
-    AR_FLAGS='-NOLOGO -OUT:"$@"'
-
-    OBJ_SUFFIX=obj
-    LIB_SUFFIX=lib
-    DLL_SUFFIX=dll
-    MKSHLIB='$(LD) -DLL $(DSO_LDOPTS) -OUT:$@'
-
-    PR_MD_ARCH_DIR=windows
-    RESOLVE_LINK_SYMBOLS=1
-
-    MDCPUCFG_H=_win95.cfg
-    LIBNSPR='$(dist_libdir)/nspr$(MOD_MAJOR_VERSION).$(LIB_SUFFIX)'
-    LIBPLC='$(dist_libdir)/plc$(MOD_MAJOR_VERSION).$(LIB_SUFFIX)'
-
-    DLLFLAGS='-OUT:"$@"'
-    if test -n "$MOZ_DEBUG_SYMBOLS"; then
-        OS_LDFLAGS='-DEBUG -DEBUGTYPE:CV'
-        OS_DLLFLAGS='-DEBUG -DEBUGTYPE:CV'
-        DSO_LDOPTS='-DEBUG -DEBUGTYPE:CV'
-    fi
-    _DEBUG_FLAGS=-Zi
-    _OPTIMIZE_FLAGS=-O2
-    ;;
-
 *-netbsd*)
     AC_DEFINE(XP_UNIX)
     AC_DEFINE(NETBSD)
@@ -2750,9 +2718,6 @@ case "$target_os" in
 darwin*)
     _HAVE_PTHREADS=1
     ;;
-wince*)
-    _HAVE_PTHREADS=
-    ;;
 *)
     MOZ_CHECK_PTHREADS(pthreads,
         _HAVE_PTHREADS=1 _PTHREAD_LDFLAGS="-lpthreads",
@@ -2997,8 +2962,8 @@ case "$target" in
         AC_DEFINE(_PR_LOCAL_THREADS_ONLY)
     fi
     ;;
-*-mingw*|*-msys*|*-cygwin*|*-mks*|*-wince*|*-winmo*|*-os2*|*-beos*)
-    dnl win32, wince, os2 & beos cannot use pthreads
+*-mingw*|*-msys*|*-cygwin*|*-mks*|*-os2*|*-beos*)
+    dnl win32, os2 & beos cannot use pthreads
     USE_PTHREADS=
     _PTHREAD_LDFLAGS=
     USE_USER_PTHREADS=

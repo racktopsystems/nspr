@@ -1,6 +1,6 @@
 --- config.sub.orig	2014-03-09 18:34:03 -0700
-+++ config.sub	2014-03-09 20:05:00 -0700
-@@ -115,18 +115,14 @@
++++ config.sub	2014-03-14 19:49:48 -0700
+@@ -115,7 +115,7 @@
  # Here we must recognize all the valid KERNEL-OS combinations.
  maybe_os=`echo $1 | sed 's/^\(.*\)-\([^-]*-[^-]*\)$/\2/'`
  case $maybe_os in
@@ -9,8 +9,7 @@
    linux-musl* | linux-uclibc* | uclinux-uclibc* | uclinux-gnu* | kfreebsd*-gnu* | \
    knetbsd*-gnu* | netbsd*-gnu* | \
    kopensolaris*-gnu* | \
--  storm-chaos* | os2-emx* | rtmk-nova*)
-+  storm-chaos* | os2-emx* | rtmk-nova* | wince-winmo*)
+@@ -123,10 +123,6 @@
      os=-$maybe_os
      basic_machine=`echo $1 | sed 's/^\(.*\)-\([^-]*-[^-]*\)$/\1/'`
      ;;
@@ -30,26 +29,7 @@
  	      | -linux-newlib* | -linux-musl* | -linux-uclibc* \
  	      | -uxpv* | -beos* | -mpeix* | -udk* \
  	      | -interix* | -uwin* | -mks* | -rhapsody* | -darwin* | -opened* \
-@@ -1376,7 +1372,7 @@
- 	      | -os2* | -vos* | -palmos* | -uclinux* | -nucleus* \
- 	      | -morphos* | -superux* | -rtmk* | -rtmk-nova* | -windiss* \
- 	      | -powermax* | -dnix* | -nx6 | -nx7 | -sei* | -dragonfly* \
--	      | -skyos* | -haiku* | -rdos* | -toppers* | -drops* | -es*)
-+	      | -skyos* | -haiku* | -rdos* | -toppers* | -drops* | -es* | -winmo*)
- 	# Remember, each alternative MUST END IN *, to match a version number.
- 		;;
- 	-qnx*)
-@@ -1418,6 +1414,9 @@
- 	-os400*)
- 		os=-os400
- 		;;
-+	-wince-winmo*)
-+		os=-wince-winmo
-+		;;
- 	-wince*)
- 		os=-wince
- 		;;
-@@ -1508,6 +1507,9 @@
+@@ -1508,6 +1504,9 @@
  		;;
  	-nacl*)
  		;;
@@ -59,7 +39,7 @@
  	-none)
  		;;
  	*)
-@@ -1777,6 +1779,9 @@
+@@ -1777,6 +1776,9 @@
  			-vos*)
  				vendor=stratus
  				;;
