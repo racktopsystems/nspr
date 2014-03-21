@@ -577,6 +577,65 @@ if test "$target" != "$host" -o -n "$CROSS_COMPILE"; then
     echo "cross compiling from $host to $target"
     cross_compiling=yes
 
+    case "$build:$target" in
+      powerpc-apple-darwin8*:i?86-apple-darwin*)
+        dnl The Darwin cross compiler doesn't necessarily point itself at a
+        dnl root that has libraries for the proper architecture, it defaults
+        dnl to the system root.  The libraries in the system root on current
+        dnl versions of PPC OS X 10.4 aren't fat, so these target compiler
+        dnl checks will fail.  Fake a working SDK in that case.
+        _SAVE_CFLAGS=$CFLAGS
+        _SAVE_CXXFLAGS=$CXXFLAGS
+        CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CFLAGS"
+        CXXFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CXXFLAGS"
+        ;;
+      *:arm*-apple-darwin*)
+        dnl The arm compiler doesn't appear to know about its root by default,
+        dnl so explicitly pass it one here. Later on we'll put this in CFLAGS
+        dnl anyway.
+        _SAVE_CFLAGS=$CFLAGS
+        _SAVE_CXXFLAGS=$CXXFLAGS
+        CFLAGS="-isysroot $MACOS_SDK_DIR $CFLAGS"
+        CXXFLAGS="-isysroot $MACOS_SDK_DIR $CXXFLAGS"
+        ;;
+    esac
+
+    AC_CHECK_PROGS(CC, $CC "${target_alias}-gcc" "${target}-gcc", echo)
+    unset ac_cv_prog_CC
+    dnl Now exit the conditional block to invoke AC_PROG_CC.
+fi
+
+dnl In the latest versions of autoconf, AC_PROG_CC is a one-shot macro,
+dnl declared with AC_DEFUN_ONCE. So it must not be expanded inside a
+dnl conditional block. Invoke AC_PROG_CC outside any conditional block
+dnl and before invoking AC_TRY_COMPILE (which requires AC_PROG_CC).
+AC_PROG_CC
+
+dnl Reenter the conditional blocks after invoking AC_PROG_CC.
+if test "$target" != "$host" -o -n "$CROSS_COMPILE"; then
+    if test -n "$USE_CPLUS"; then
+        AC_CHECK_PROGS(CXX, $CXX "${target_alias}-g++" "${target}-g++", echo)
+        unset ac_cv_prog_CXX
+        AC_PROG_CXX
+    fi
+
+    case "$build:$target" in
+      powerpc-apple-darwin8*:i?86-apple-darwin*|*:arm*-apple-darwin*)
+        dnl Revert the changes made above.  From this point on, the target
+        dnl compiler will never be used without applying the SDK to CFLAGS
+        dnl (see --with-macos-sdk below).
+        CFLAGS=$_SAVE_CFLAGS
+        CXXFLAGS=$_SAVE_CXXFLAGS
+        ;;
+    esac
+
+    AC_CHECK_PROGS(RANLIB, $RANLIB "${target_alias}-ranlib" "${target}-ranlib", echo)
+    AC_CHECK_PROGS(AR, $AR "${target_alias}-ar" "${target}-ar", echo)
+    AC_CHECK_PROGS(AS, $AS "${target_alias}-as" "${target}-as", echo)
+    AC_CHECK_PROGS(LD, $LD "${target_alias}-ld" "${target}-ld", echo)
+    AC_CHECK_PROGS(STRIP, $STRIP "${target_alias}-strip" "${target}-strip", echo)
+    AC_CHECK_PROGS(WINDRES, $WINDRES "${target_alias}-windres" "${target}-windres", echo)
+
     _SAVE_CC="$CC"
     _SAVE_CFLAGS="$CFLAGS"
     _SAVE_LDFLAGS="$LDFLAGS"
@@ -606,62 +665,11 @@ if test "$target" != "$host" -o -n "$CROSS_COMPILE"; then
     CC=$_SAVE_CC
     CFLAGS=$_SAVE_CFLAGS
     LDFLAGS=$_SAVE_LDFLAGS
-
-    case "$build:$target" in 
-      powerpc-apple-darwin8*:i?86-apple-darwin*)
-        dnl The Darwin cross compiler doesn't necessarily point itself at a
-        dnl root that has libraries for the proper architecture, it defaults
-        dnl to the system root.  The libraries in the system root on current
-        dnl versions of PPC OS X 10.4 aren't fat, so these target compiler
-        dnl checks will fail.  Fake a working SDK in that case.
-        _SAVE_CFLAGS=$CFLAGS 
-        _SAVE_CXXFLAGS=$CXXFLAGS
-        CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CFLAGS"
-        CXXFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CXXFLAGS"
-        ;;
-      *:arm*-apple-darwin*)
-        dnl The arm compiler doesn't appear to know about its root by default,
-        dnl so explicitly pass it one here. Later on we'll put this in CFLAGS
-        dnl anyway.
-        _SAVE_CFLAGS=$CFLAGS
-        _SAVE_CXXFLAGS=$CXXFLAGS
-        CFLAGS="-isysroot $MACOS_SDK_DIR $CFLAGS"
-        CXXFLAGS="-isysroot $MACOS_SDK_DIR $CXXFLAGS"
-        ;;
-    esac
-
-    AC_CHECK_PROGS(CC, $CC "${target_alias}-gcc" "${target}-gcc", echo)
-    unset ac_cv_prog_CC
-    AC_PROG_CC
-    if test -n "$USE_CPLUS"; then
-        AC_CHECK_PROGS(CXX, $CXX "${target_alias}-g++" "${target}-g++", echo)
-        unset ac_cv_prog_CXX
-        AC_PROG_CXX
-    fi
-
-    case "$build:$target" in
-      powerpc-apple-darwin8*:i?86-apple-darwin*|*:arm*-apple-darwin*)
-        dnl Revert the changes made above.  From this point on, the target
-        dnl compiler will never be used without applying the SDK to CFLAGS
-        dnl (see --with-macos-sdk below).
-        CFLAGS=$_SAVE_CFLAGS
-        CXXFLAGS=$_SAVE_CXXFLAGS
-        ;;
-    esac
-
-    AC_CHECK_PROGS(RANLIB, $RANLIB "${target_alias}-ranlib" "${target}-ranlib", echo)
-    AC_CHECK_PROGS(AR, $AR "${target_alias}-ar" "${target}-ar", echo)
-    AC_CHECK_PROGS(AS, $AS "${target_alias}-as" "${target}-as", echo)
-    AC_CHECK_PROGS(LD, $LD "${target_alias}-ld" "${target}-ld", echo)
-    AC_CHECK_PROGS(STRIP, $STRIP "${target_alias}-strip" "${target}-strip", echo)
-    AC_CHECK_PROGS(WINDRES, $WINDRES "${target_alias}-windres" "${target}-windres", echo)
-
 else
-    AC_PROG_CC
     if test -n "$USE_CPLUS"; then
         if test "$CC" = "cl" -a -z "$CXX"; then
             CXX=$CC
-        else        
+        else
             AC_PROG_CXX
         fi
     fi
