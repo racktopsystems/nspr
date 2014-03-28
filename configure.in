@@ -673,7 +673,6 @@ else
             AC_PROG_CXX
         fi
     fi
-    AC_PROG_CPP
     AC_PROG_RANLIB
     AC_PATH_PROGS(AS, as, $CC)
     AC_PATH_PROGS(AR, ar, echo not_ar)
@@ -687,6 +686,8 @@ else
         HOST_CFLAGS="$CFLAGS"
     fi
 fi
+
+AC_PROG_CPP
 
 if test "$GCC" = "yes"; then
     GNU_CC=1
