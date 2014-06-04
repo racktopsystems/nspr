@@ -13,7 +13,8 @@ int main()
     double pi = 3.1415926;
     double e = 2.71828;
     double root2 = 1.414;
-    double nan = 0.0 / 0.0;
+    double zero = 0.0;
+    double nan = zero / zero;
 
     PR_fprintf(PR_STDOUT, "pi is %f.\n", pi);
     PR_fprintf(PR_STDOUT, "e is %f.\n", e);

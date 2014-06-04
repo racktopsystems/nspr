@@ -18,6 +18,10 @@
 #include "prlog.h"
 #include "prmem.h"
 
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
+
 /*
 ** WARNING: This code may *NOT* call PR_LOG (because PR_LOG calls it)
 */
