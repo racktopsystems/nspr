@@ -2643,50 +2643,18 @@ fi
 ;;
 esac
 
-dnl
-dnl Apparently, some systems cannot properly check for the pthread
-dnl library unless <pthread.h> is included so we need to test
-dnl using it
-dnl
-dnl MOZ_CHECK_PTHREADS(lib, success, failure)
-AC_DEFUN(MOZ_CHECK_PTHREADS,
-[
-AC_MSG_CHECKING([for pthread_create in -l$1])
-echo "
-    #include <pthread.h> 
-    void *foo(void *v) { return v; } 
-    int main() { 
-        pthread_t t;
-        if (!pthread_create(&t, 0, &foo, 0)) {
-            pthread_join(t, 0);
-        }
-        return 0;
-    }" > dummy.c ;
-    echo "${CC-cc} -o dummy${ac_exeext} dummy.c $CFLAGS $CPPFLAGS -l[$1] $LDFLAGS $LIBS" 1>&5;
-    ${CC-cc} -o dummy${ac_exeext} dummy.c $CFLAGS $CPPFLAGS -l[$1] $LDFLAGS $LIBS 2>&5;
-    _res=$? ;
-    rm -f dummy.c dummy${ac_exeext} ;
-    if test "$_res" = "0"; then
-        AC_MSG_RESULT([yes])
-        [$2]
-    else
-        AC_MSG_RESULT([no])
-        [$3]
-    fi
-])
-
 case "$target_os" in
 darwin*)
     _HAVE_PTHREADS=1
     ;;
 *)
-    MOZ_CHECK_PTHREADS(pthreads,
+    AC_CHECK_LIB(pthreads, pthread_create,
         _HAVE_PTHREADS=1 _PTHREAD_LDFLAGS="-lpthreads",
-        MOZ_CHECK_PTHREADS(pthread,
+        AC_CHECK_LIB(pthread, pthread_create,
             _HAVE_PTHREADS=1 _PTHREAD_LDFLAGS="-lpthread",
-            MOZ_CHECK_PTHREADS(c_r,
+            AC_CHECK_LIB(c_r, pthread_create,
                 _HAVE_PTHREADS=1 _PTHREAD_LDFLAGS="-lc_r",
-                MOZ_CHECK_PTHREADS(c,
+                AC_CHECK_LIB(c, pthread_create,
                     _HAVE_PTHREADS=1
                 )
             )
