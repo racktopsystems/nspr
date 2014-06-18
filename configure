@@ -2576,18 +2576,19 @@ fi
   test -n "$CC" && break
 done
 
-    if test "$CC" = "cl"; then
-        echo 'main() { return 0; }' > dummy.c
-        ${CC} -o dummy dummy.c >/dev/null 2>&1
-        if test $? = 0; then
-            _WIN32_MSVC=1
-            CXX=$CC
-        else
-            { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: $(CC) test failed.  Using normal feature tests" >&5
-$as_echo "$as_me: WARNING: $(CC) test failed.  Using normal feature tests" >&2;}
-        fi
-        rm -f dummy dummy.o dummy.obj dummy.exe dummy.c
+    cat > conftest.c <<EOF
+#ifdef _MSC_VER
+COMPILER IS MSVC
+#endif
+EOF
+    read dummy <<EOF
+$($CC -E conftest.c 2>/dev/null | grep COMPILER)
+EOF
+    if test -n "$dummy"; then
+        _WIN32_MSVC=1
+        CXX=$CC
     fi
+    rm -f conftest.c
     ;;
 *-mks*)
     _WIN32_MSVC=1

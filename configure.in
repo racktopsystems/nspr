@@ -72,17 +72,19 @@ case "$target" in
     # Check to see if we are really running in a msvc environemnt
     _WIN32_MSVC=
     AC_CHECK_PROGS(CC, cl)
-    if test "$CC" = "cl"; then
-        echo 'main() { return 0; }' > dummy.c
-        ${CC} -o dummy dummy.c >/dev/null 2>&1
-        if test $? = 0; then
-            _WIN32_MSVC=1
-            CXX=$CC
-        else
-            AC_MSG_WARN([$(CC) test failed.  Using normal feature tests])
-        fi
-        rm -f dummy dummy.o dummy.obj dummy.exe dummy.c
+    cat > conftest.c <<EOF
+#ifdef _MSC_VER
+COMPILER IS MSVC
+#endif
+EOF
+    read dummy <<EOF
+$($CC -E conftest.c 2>/dev/null | grep COMPILER)
+EOF
+    if test -n "$dummy"; then
+        _WIN32_MSVC=1
+        CXX=$CC
     fi
+    rm -f conftest.c
     ;;
 *-mks*)
     _WIN32_MSVC=1
