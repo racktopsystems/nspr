@@ -1988,6 +1988,12 @@ tools are selected during the Xcode/Developer Tools installation.])
         PROFILE_USE_CFLAGS="-GL -wd4624 -wd4952"
         PROFILE_USE_LDFLAGS="-LTCG:PGUPDATE"
 
+        if test "$MSC_VER" -ge "1700"; then
+            dnl Visual C++ 2012 defaults to -arch:SSE2. Use -arch:IA32 to
+            dnl avoid requiring SSE2.
+            CFLAGS="$CFLAGS -arch:IA32"
+        fi
+
         if test "$MSC_VER" -ge "1800"; then
             dnl Visual C++ 2013 requires -FS when parallel building with
             dnl make -jN. If not specified, compiler sometimes emits C1041
