@@ -1456,7 +1456,7 @@ Optional Features:
   --enable-symbian-target=\$t
                           Specify symbian flavor. (WINSCW or GCCE)
   --enable-debug-rtl      Use the MSVC debug runtime library
-  --enable-static-rtl      Use the MSVC static runtime library
+  --enable-static-rtl     Use the MSVC static runtime library
   --enable-n32            Enable n32 ABI support (IRIX only)
   --enable-x32            Enable x32 ABI support (x86_64 only)
   --enable-64bit          Enable 64-bit support (on certain platforms)
