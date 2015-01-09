@@ -277,6 +277,7 @@ PR_IMPLEMENT(PRUint64) PR_GetPhysicalMemorySize(void)
 
 #elif defined(NETBSD) || defined(OPENBSD) \
     || defined(FREEBSD) || defined(DRAGONFLY)
+
     int mib[2];
     int rc;
 #ifdef HW_PHYSMEM64
