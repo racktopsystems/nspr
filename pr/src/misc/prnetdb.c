@@ -48,6 +48,8 @@ PRLock *_pr_dnsLock = NULL;
 #define UNLOCK_DNS() PR_Unlock(_pr_dnsLock)
 #endif  /* defined(_PR_NO_DNS_LOCK) */
 
+#if defined(HAVE_GETPROTOBYNAME_R)
+#define _PR_HAVE_GETPROTO_R
 /*
  * Some platforms have the reentrant getprotobyname_r() and
  * getprotobynumber_r().  However, they come in three flavors.
@@ -57,7 +59,6 @@ PRLock *_pr_dnsLock = NULL;
 #if defined(XP_BEOS) && defined(BONE_VERSION)
 #include <arpa/inet.h>  /* pick up define for inet_addr */
 #include <sys/socket.h>
-#define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_GETPROTO_R_POINTER
 #endif
 
@@ -65,7 +66,6 @@ PRLock *_pr_dnsLock = NULL;
 	|| (defined(LINUX) && defined(_REENTRANT) \
         && !(defined(__GLIBC__) && __GLIBC__ >= 2) \
         && !defined(ANDROID))
-#define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_GETPROTO_R_POINTER
 #endif
 
@@ -74,22 +74,19 @@ PRLock *_pr_dnsLock = NULL;
 	|| (defined(HPUX10_10) && defined(_REENTRANT)) \
         || (defined(HPUX10_20) && defined(_REENTRANT)) \
         || defined(OPENBSD)
-#define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_GETPROTO_R_INT
 #endif
 
 #if __FreeBSD_version >= 602000
-#define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_5_ARG_GETPROTO_R
 #endif
 
 /* BeOS has glibc but not the glibc-style getprotobyxxx_r functions. */
 #if (defined(__GLIBC__) && __GLIBC__ >= 2 && !defined(XP_BEOS))
-#define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_5_ARG_GETPROTO_R
 #endif
 
-#if !defined(_PR_HAVE_GETPROTO_R)
+#else /* !defined(HAVE_GETPROTOBYNAME_R) */
 PRLock* _getproto_lock = NULL;
 #endif
 
