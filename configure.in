@@ -1412,7 +1412,7 @@ case "$target" in
     if test "`echo $CC | grep -c '\-arch '`" = "0"; then
         CC="$CC -arch $CPU_ARCH"
     fi
-    AC_CHECK_HEADER(crt_externs.h)
+    AC_CHECK_HEADER(crt_externs.h, AC_DEFINE(HAVE_CRT_EXTERNS_H))
     DSO_CFLAGS=-fPIC
     DSO_LDOPTS='-dynamiclib -compatibility_version 1 -current_version 1 -all_load -install_name @executable_path/$@ -headerpad_max_install_names'
     _OPTIMIZE_FLAGS=-O2
