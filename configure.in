@@ -568,15 +568,6 @@ if test "$target" != "$host"; then
         CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CFLAGS"
         CXXFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk $CXXFLAGS"
         ;;
-      *:arm*-apple-darwin*)
-        dnl The arm compiler doesn't appear to know about its root by default,
-        dnl so explicitly pass it one here. Later on we'll put this in CFLAGS
-        dnl anyway.
-        _SAVE_CFLAGS=$CFLAGS
-        _SAVE_CXXFLAGS=$CXXFLAGS
-        CFLAGS="-isysroot $MACOS_SDK_DIR $CFLAGS"
-        CXXFLAGS="-isysroot $MACOS_SDK_DIR $CXXFLAGS"
-        ;;
     esac
 
     AC_CHECK_PROGS(CC, $CC "${target_alias}-gcc" "${target}-gcc", echo)
