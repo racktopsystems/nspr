@@ -137,9 +137,9 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #define PL_ARENA_ALLOCATE(p, pool, nb) \
     PR_BEGIN_MACRO \
         PLArena *_a = (pool)->current; \
-        PRUint32 _nb = PL_ARENA_ALIGN(pool, nb); \
+        PRUint32 _nb = PL_ARENA_ALIGN(pool, (PRUint32)nb); \
         PRUword _p = _a->avail; \
-        if (_nb < nb) { \
+        if (_nb < (PRUint32)nb) { \
             _p = 0; \
         } else if (_nb > (_a->limit - _a->avail)) { \
             _p = (PRUword)PL_ArenaAllocate(pool, _nb); \
@@ -148,27 +148,27 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
         } \
         p = (void *)_p; \
         if (p) { \
-            PL_MAKE_MEM_UNDEFINED(p, nb); \
-            PL_ArenaCountAllocation(pool, nb); \
+            PL_MAKE_MEM_UNDEFINED(p, (PRUint32)nb); \
+            PL_ArenaCountAllocation(pool, (PRUint32)nb); \
         } \
     PR_END_MACRO
 
 #define PL_ARENA_GROW(p, pool, size, incr) \
     PR_BEGIN_MACRO \
         PLArena *_a = (pool)->current; \
-        PRUint32 _incr = PL_ARENA_ALIGN(pool, incr); \
-        if (_incr < incr) { \
+        PRUint32 _incr = PL_ARENA_ALIGN(pool, (PRUint32)incr); \
+        if (_incr < (PRUint32)incr) { \
             p = NULL; \
         } else if (_a->avail == (PRUword)(p) + PL_ARENA_ALIGN(pool, size) && \
             _incr <= (_a->limit - _a->avail)) { \
-            PL_MAKE_MEM_UNDEFINED((unsigned char *)(p) + size, incr); \
+            PL_MAKE_MEM_UNDEFINED((unsigned char *)(p) + size, (PRUint32)incr); \
             _a->avail += _incr; \
-            PL_ArenaCountInplaceGrowth(pool, size, incr); \
+            PL_ArenaCountInplaceGrowth(pool, size, (PRUint32)incr); \
         } else { \
-            p = PL_ArenaGrow(pool, p, size, incr); \
+            p = PL_ArenaGrow(pool, p, size, (PRUint32)incr); \
         } \
         if (p) {\
-            PL_ArenaCountGrowth(pool, size, incr); \
+            PL_ArenaCountGrowth(pool, size, (PRUint32)incr); \
         } \
     PR_END_MACRO
 
