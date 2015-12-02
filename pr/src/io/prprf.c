@@ -697,7 +697,7 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
     char *hexp;
     int rv, i;
     struct NumArg* nas = NULL;
-    struct NumArg* nap;
+    struct NumArg* nap = NULL;
     struct NumArg  nasArray[ NAS_DEFAULT_NUM ];
     char  pattern[20];
     const char* dolPt = NULL;  /* in "%4$.2f", dolPt will point to . */
