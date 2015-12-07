@@ -29,6 +29,8 @@
 #define _PR_SI_ARCHITECTURE "powerpc64"
 #elif defined(__powerpc__)
 #define _PR_SI_ARCHITECTURE "powerpc"
+#elif defined(__aarch64__)
+#define _PR_SI_ARCHITECTURE "aarch64"
 #elif defined(__arm__)
 #define _PR_SI_ARCHITECTURE "arm"
 #elif defined(__mips64__)
