@@ -548,7 +548,7 @@ int main(int argc, char **argv)
 	Usage: test_name -d
 	*/
 	PLOptStatus os;
-	PLOptState *opt = PL_CreateOptState(argc, argv, "d:");
+	PLOptState *opt = PL_CreateOptState(argc, argv, "d");
 	while (PL_OPT_EOL != (os = PL_GetNextOpt(opt)))
     {
 		if (PL_OPT_BAD == os) continue;
