@@ -246,12 +246,23 @@ PRFileDesc *
 ServerSetup(void)
 {
     PRFileDesc *listenSocket;
+    PRSocketOptionData sockOpt;
     PRNetAddr serverAddr;
     PRThread *WorkerThread;
 
-    if ( (listenSocket = PR_NewTCPSocket()) == NULL) {
+    if ((listenSocket = PR_NewTCPSocket()) == NULL) {
         if (debug_mode) printf("\tServer error creating listen socket\n");
 		else Test_Result(FAIL);
+        return NULL;
+    }
+
+    sockOpt.option = PR_SockOpt_Reuseaddr;
+    sockOpt.value.reuse_addr = PR_TRUE;
+    if (PR_SetSocketOption(listenSocket, &sockOpt) != PR_SUCCESS) {
+        if (debug_mode) printf("\tServer error setting socket option: OS error %d\n",
+                PR_GetOSError());
+        else Test_Result(FAIL);
+        PR_Close(listenSocket);
         return NULL;
     }
 
@@ -260,7 +271,7 @@ ServerSetup(void)
     serverAddr.inet.port = PR_htons(PORT);
     serverAddr.inet.ip = PR_htonl(PR_INADDR_ANY);
 
-    if ( PR_Bind(listenSocket, &serverAddr) == PR_FAILURE) {
+    if (PR_Bind(listenSocket, &serverAddr) != PR_SUCCESS) {
         if (debug_mode) printf("\tServer error binding to server address: OS error %d\n",
                 PR_GetOSError());
 		else Test_Result(FAIL);
@@ -268,7 +279,7 @@ ServerSetup(void)
         return NULL;
     }
 
-    if ( PR_Listen(listenSocket, 128) == PR_FAILURE) {
+    if (PR_Listen(listenSocket, 128) != PR_SUCCESS) {
         if (debug_mode) printf("\tServer error listening to server socket\n");
 		else Test_Result(FAIL);
         PR_Close(listenSocket);
