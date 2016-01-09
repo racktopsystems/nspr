@@ -37,6 +37,7 @@
 #define PASS 0
 #define FAIL 1
 static int debug_mode = 0;
+static int failed_already = 0;
 
 static int _iterations = 1000;
 static int _clients = 1;
@@ -90,6 +91,7 @@ static void Test_Result (int result)
 			break;
 		case FAIL:
 			printf ("FAIL\n");
+			failed_already = 1;
 			break;
 		default:
 			break;
@@ -617,5 +619,5 @@ int main(int argc, char **argv)
 
     PR_Cleanup();
 
-    return 0;
+    return failed_already;
 }
