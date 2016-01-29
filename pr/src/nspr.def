@@ -460,4 +460,5 @@ EXPORTS ;-
 ;+NSPR_4.12 {
 ;+      global:
 		PR_DuplicateEnvironment;
+		PR_GetEnvSecure;
 ;+} NSPR_4.10.3;
